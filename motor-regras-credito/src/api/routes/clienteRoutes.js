@@ -24,3 +24,5 @@ function criarClienteRoutes() {
 
   return router;
 }
+
+module.exports = criarClienteRoutes;  // Esta linha estava faltando

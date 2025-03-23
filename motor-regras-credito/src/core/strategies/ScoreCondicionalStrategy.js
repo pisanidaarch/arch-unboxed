@@ -10,6 +10,7 @@ class ScoreCondicionalStrategy extends Strategy {
     this.aprovada = aprovada;
     this._nome = nome || "SCORE_CONDICIONAL";
     this._descricao = descricao || `Score mínimo de ${scoreMinimo} para clientes ${condicao.toLowerCase()}`;
+    this.parametros = { scoreMinimo, condicao };
   }
 
   execute(cenario) {

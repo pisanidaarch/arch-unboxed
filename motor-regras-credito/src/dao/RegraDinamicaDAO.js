@@ -13,7 +13,7 @@ class RegraDinamicaDAO {
    */
   async listar(options = {}) {
     try {
-      const { ativas = true, aprovadas, origem } = options;
+      const { ativas, aprovadas, origem } = options;
       
       let query = this.db('regras_dinamicas');
       
