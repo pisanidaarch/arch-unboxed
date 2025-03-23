@@ -120,7 +120,7 @@ class RegraDinamicaDAO {
         tipo: regra.tipo,
         parametros: parametrosJSON,
         aprovada: regra.aprovada || false,
-        origem: regra.origem,
+        origem: regra.origem || 'HUMANO',
         ativa: regra.ativa !== undefined ? regra.ativa : true,
         created_at: new Date(),
         updated_at: new Date()
@@ -148,20 +148,23 @@ class RegraDinamicaDAO {
       }
       
       // Garantir que parametros seja uma string JSON
-      const parametrosJSON = typeof regra.parametros === 'string' 
-        ? regra.parametros 
-        : JSON.stringify(regra.parametros || {});
+      let parametrosJSON = regraExistente.parametros;
+      if (regra.parametros) {
+        parametrosJSON = typeof regra.parametros === 'string' 
+          ? regra.parametros 
+          : JSON.stringify(regra.parametros);
+      }
       
       await this.db('regras_dinamicas')
         .where('id', id)
         .update({
-          nome: regra.nome,
-          descricao: regra.descricao,
-          tipo: regra.tipo,
+          nome: regra.nome || regraExistente.nome,
+          descricao: regra.descricao || regraExistente.descricao,
+          tipo: regra.tipo || regraExistente.tipo,
           parametros: parametrosJSON,
-          aprovada: regra.aprovada,
-          origem: regra.origem,
-          ativa: regra.ativa,
+          aprovada: regra.aprovada !== undefined ? regra.aprovada : regraExistente.aprovada,
+          origem: regra.origem || regraExistente.origem,
+          ativa: regra.ativa !== undefined ? regra.ativa : regraExistente.ativa,
           updated_at: new Date()
         });
       

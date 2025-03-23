@@ -77,6 +77,53 @@ class RegraDinamicaController {
         });
       }
 
+      // Validações específicas para cada tipo de regra
+      const erros = [];
+      
+      if (tipo === 'COMPROMETIMENTO_RENDA' && (!parametros.percentualMaximo || isNaN(parametros.percentualMaximo))) {
+        erros.push('Parâmetro percentualMaximo é obrigatório e deve ser um número para regras COMPROMETIMENTO_RENDA');
+      }
+      
+      if (tipo === 'VALOR_MAXIMO' && (!parametros.valorMaximo || isNaN(parametros.valorMaximo))) {
+        erros.push('Parâmetro valorMaximo é obrigatório e deve ser um número para regras VALOR_MAXIMO');
+      }
+      
+      if (tipo === 'SCORE_CONDICIONAL') {
+        if (!parametros.scoreMinimo || isNaN(parametros.scoreMinimo)) {
+          erros.push('Parâmetro scoreMinimo é obrigatório e deve ser um número para regras SCORE_CONDICIONAL');
+        }
+        if (!parametros.condicao) {
+          erros.push('Parâmetro condicao é obrigatório para regras SCORE_CONDICIONAL');
+        }
+      }
+      
+      if (tipo === 'PRAZO_MINIMO') {
+        if (!parametros.valorMinimo || isNaN(parametros.valorMinimo)) {
+          erros.push('Parâmetro valorMinimo é obrigatório e deve ser um número para regras PRAZO_MINIMO');
+        }
+        if (!parametros.prazoMinimo || isNaN(parametros.prazoMinimo)) {
+          erros.push('Parâmetro prazoMinimo é obrigatório e deve ser um número para regras PRAZO_MINIMO');
+        }
+      }
+      
+      if (erros.length > 0) {
+        return res.status(400).json({ 
+          mensagem: 'Validação falhou',
+          erros
+        });
+      }
+
+      // Verificar se já existe uma regra com o mesmo nome
+      const regrasExistentes = await this.regraDinamicaDAO.listar();
+      const regraExistenteComMesmoNome = regrasExistentes.find(r => r.nome === nome);
+      
+      if (regraExistenteComMesmoNome) {
+        return res.status(409).json({ 
+          mensagem: `Já existe uma regra com o nome '${nome}'`,
+          regra: regraExistenteComMesmoNome
+        });
+      }
+
       const regra = await this.regraDinamicaDAO.inserir({
         nome,
         descricao,
@@ -118,6 +165,19 @@ class RegraDinamicaController {
           return res.status(400).json({ 
             mensagem: 'Tipo de regra inválido',
             tiposValidos
+          });
+        }
+      }
+      
+      // Verificar se o nome atualizado já existe em outra regra
+      if (nome && nome !== regraExistente.nome) {
+        const regrasExistentes = await this.regraDinamicaDAO.listar();
+        const regraExistenteComMesmoNome = regrasExistentes.find(r => r.nome === nome && r.id !== parseInt(id));
+        
+        if (regraExistenteComMesmoNome) {
+          return res.status(409).json({ 
+            mensagem: `Já existe outra regra com o nome '${nome}'`,
+            regra: regraExistenteComMesmoNome
           });
         }
       }

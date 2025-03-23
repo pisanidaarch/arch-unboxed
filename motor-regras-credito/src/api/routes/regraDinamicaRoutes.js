@@ -7,33 +7,33 @@ function criarRegraDinamicaRoutes() {
   const router = express.Router();
   const regraDinamicaController = new RegraDinamicaController();
 
-  // Rota para listar todas as regras dinâmicas
+  // Rota para listar regras dinâmicas (com filtros opcionais)
   router.get('/', (req, res, next) => {
     regraDinamicaController.listarRegras(req, res, next);
   });
 
-  // Rota para obter detalhes de uma regra específica
+  // Rota para detalhar uma regra dinâmica
   router.get('/:id', validarIdParam('id'), (req, res, next) => {
     regraDinamicaController.detalharRegra(req, res, next);
   });
 
-  // Rota para criar uma nova regra
+  // Rota para criar uma nova regra dinâmica
   router.post('/', (req, res, next) => {
     regraDinamicaController.criarRegra(req, res, next);
   });
 
-  // Rota para atualizar uma regra existente
+  // Rota para atualizar uma regra dinâmica
   router.put('/:id', validarIdParam('id'), (req, res, next) => {
     regraDinamicaController.atualizarRegra(req, res, next);
   });
 
-  // Rota para aprovar/reprovar uma regra
-  router.patch('/:id/aprovacao', validarIdParam('id'), (req, res, next) => {
+  // Rota para aprovar/reprovar uma regra dinâmica
+  router.put('/:id/aprovacao', validarIdParam('id'), (req, res, next) => {
     regraDinamicaController.alterarAprovacao(req, res, next);
   });
 
-  // Rota para ativar/desativar uma regra
-  router.patch('/:id/ativacao', validarIdParam('id'), (req, res, next) => {
+  // Rota para ativar/desativar uma regra dinâmica
+  router.put('/:id/ativacao', validarIdParam('id'), (req, res, next) => {
     regraDinamicaController.alterarAtivacao(req, res, next);
   });
 
