@@ -1,10 +1,11 @@
 // src/adapter/DadosClienteAdapter.js
 const Adapter = require('./Adapter');
+const { getDatabase } = require('../config/database');
 
 class DadosClienteAdapter extends Adapter {
-  constructor(clienteDatabase) {
+  constructor(options = {}) {
     super();
-    this.clienteDatabase = clienteDatabase;
+    this.db = options.db || getDatabase();
   }
 
   getTipo() {
@@ -13,7 +14,10 @@ class DadosClienteAdapter extends Adapter {
 
   async carregarDados(clienteId) {
     try {
-      const cliente = await this.clienteDatabase.buscarCliente(clienteId);
+      // Consulta o cliente no banco de dados
+      const cliente = await this.db('clientes')
+        .where('id', clienteId)
+        .first();
       
       if (!cliente) {
         throw new Error(`Cliente não encontrado: ${clienteId}`);
@@ -23,8 +27,14 @@ class DadosClienteAdapter extends Adapter {
         nome: cliente.nome,
         idade: cliente.idade,
         sexo: cliente.sexo,
-        rendaMensal: cliente.rendaMensal,
-        // outros dados relevantes
+        rendaMensal: cliente.renda_mensal,
+        email: cliente.email,
+        telefone: cliente.telefone,
+        endereco: cliente.endereco,
+        cidade: cliente.cidade,
+        estado: cliente.estado,
+        cep: cliente.cep,
+        cpf: cliente.cpf
       };
     } catch (error) {
       console.error(`Erro ao buscar dados do cliente ${clienteId}:`, error);

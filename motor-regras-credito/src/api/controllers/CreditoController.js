@@ -1,8 +1,10 @@
 // src/api/controllers/CreditoController.js
+const ClienteDAO = require('../../dao/ClienteDAO');
 
 class CreditoController {
     constructor(motor) {
       this.motor = motor;
+      this.clienteDAO = new ClienteDAO();
     }
   
     async analisarCredito(req, res, next) {
@@ -16,6 +18,12 @@ class CreditoController {
   
         if (!valorCredito || isNaN(valorCredito) || valorCredito <= 0) {
           return res.status(400).json({ mensagem: 'Valor de crédito deve ser um número positivo' });
+        }
+
+        // Verificar se o cliente existe
+        const cliente = await this.clienteDAO.buscarPorId(clienteId);
+        if (!cliente) {
+          return res.status(404).json({ mensagem: `Cliente não encontrado: ${clienteId}` });
         }
   
         // Processar solicitação no motor
@@ -51,6 +59,65 @@ class CreditoController {
         }
   
         return res.status(200).json(resposta);
+      } catch (error) {
+        next(error);
+      }
+    }
+
+    async consultarCenario(req, res, next) {
+      try {
+        const { id } = req.params;
+        
+        if (!id) {
+          return res.status(400).json({ mensagem: 'ID do cenário é obrigatório' });
+        }
+
+        const cenario = await this.motor.buscarCenario(id);
+        
+        if (!cenario) {
+          return res.status(404).json({ mensagem: `Cenário não encontrado: ${id}` });
+        }
+
+        return res.status(200).json({
+          id: cenario.id,
+          clienteId: cenario.clienteId,
+          valorCredito: cenario.valorCredito,
+          dataCriacao: cenario.dataCriacao,
+          status: cenario.status,
+          resultadosAvaliacao: cenario.resultadosAvaliacao.map(r => ({
+            regra: r.regra,
+            resultado: r.resultado,
+            descricao: r.descricao
+          })),
+          resultadoIA: cenario.resultadoIA
+        });
+      } catch (error) {
+        next(error);
+      }
+    }
+
+    async consultarHistoricoCliente(req, res, next) {
+      try {
+        const { clienteId } = req.params;
+        
+        if (!clienteId) {
+          return res.status(400).json({ mensagem: 'ID do cliente é obrigatório' });
+        }
+
+        // Verificar se o cliente existe
+        const cliente = await this.clienteDAO.buscarPorId(clienteId);
+        if (!cliente) {
+          return res.status(404).json({ mensagem: `Cliente não encontrado: ${clienteId}` });
+        }
+
+        const cenarios = await this.motor.buscarCenariosPorCliente(clienteId);
+        
+        return res.status(200).json({
+          clienteId,
+          nomeCliente: cliente.nome,
+          totalAnalises: cenarios.length,
+          analises: cenarios
+        });
       } catch (error) {
         next(error);
       }
