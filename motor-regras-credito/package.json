@@ -8,7 +8,13 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "migrate": "node src/scripts/runMigrations.js",
+    "seed": "node src/scripts/seedDatabase.js",
+    "setup:db": "npm run migrate && npm run seed",
+    "test:credit": "node tests/integration/test-credit.js",
+    "test:api": "node tests/e2e/test-api.js",
+    "setup": "chmod +x setup.sh && ./setup.sh"
   },
   "keywords": ["credit", "approval", "rules-engine"],
   "author": "",
@@ -16,7 +22,12 @@
   "dependencies": {
     "express": "^4.18.2",
     "helmet": "^7.1.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "pg": "^8.11.3",
+    "pg-format": "^1.0.4",
+    "dotenv": "^16.3.1",
+    "knex": "^3.0.1",
+    "faker": "^5.5.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",

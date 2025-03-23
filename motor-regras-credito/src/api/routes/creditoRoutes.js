@@ -24,3 +24,5 @@ function criarCreditoRoutes(motor) {
 
   return router;
 }
+
+module.exports = criarCreditoRoutes;  // Esta linha estava faltando

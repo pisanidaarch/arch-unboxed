@@ -9,4 +9,13 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DB_HOST=arch-unboxed-do-user-17207448-0.m.db.ondigitalocean.com
+      - DB_PORT=25060
+      - DB_USER=doadmin
+      - DB_PASSWORD=AVNS__miNSjGgSy7bewEbrvA
+      - DB_NAME=defaultdb
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    command: >
+      sh -c "npm run setup:db && npm start"

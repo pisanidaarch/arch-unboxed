@@ -6,8 +6,9 @@ class RequisicaoIAHandler {
     }
   
     async processar(cenario) {
-      // Cria uma cópia para não modificar o original diretamente
-      const cenarioProcessado = { ...cenario };
+      // Não cria uma cópia simples do objeto, pois isso não copia os métodos
+      // Usamos o cenário original diretamente
+      const cenarioProcessado = cenario;
   
       // Verifica se já falhou em alguma regra anterior ou precisa análise manual
       if (cenarioProcessado.regraFalhou || cenarioProcessado.precisaAnaliseManual) {
