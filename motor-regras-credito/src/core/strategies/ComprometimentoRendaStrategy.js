@@ -1,44 +1,23 @@
 // src/core/strategies/ComprometimentoRendaStrategy.js
 const Strategy = require('./Strategy');
-
-/**
- * Restaura os métodos da classe Cenario se eles estiverem faltando.
- */
-function restaurarMetodosCenario(cenario) {
-  // Adiciona método getDadosPorTipo se estiver faltando
-  if (typeof cenario.getDadosPorTipo !== 'function') {
-    cenario.getDadosPorTipo = function(tipo) {
-      if (!Array.isArray(this.dadosCenario)) {
-        return {};
-      }
-      const item = this.dadosCenario.find(d => d.tipo === tipo);
-      return item ? item.dados : {};
-    };
-  }
-  return cenario;
-}
+const { restaurarMetodosCenario } = require('../../utils/CenarioHelper');
 
 class ComprometimentoRendaStrategy extends Strategy {
-  constructor(percentualMaximo, aprovada) {
+  constructor(percentualMaximo, aprovada, nome, descricao) {
     super();
     this.percentualMaximo = percentualMaximo;
     this.aprovada = aprovada;
+    this._nome = nome || "COMPROMETIMENTO_RENDA";
+    this._descricao = descricao || `Comprometimento máximo de renda de ${percentualMaximo}%`;
   }
 
   execute(cenario) {
     // Restaura os métodos do cenário se estiverem faltando
     cenario = restaurarMetodosCenario(cenario);
 
-    // Verificação de segurança - para debugging
-    if (typeof cenario.getDadosPorTipo !== 'function') {
-      console.error('ERRO: cenario.getDadosPorTipo não é uma função mesmo após restauração!');
-      console.error('cenario:', JSON.stringify(cenario));
-      return false; // Falha de segurança
-    }
-
     const dadosCliente = cenario.getDadosPorTipo("DADOS_CLIENTE");
     const rendaMensal = dadosCliente?.rendaMensal || 0;
-    const valorParcela = this.calcularValorParcela(cenario.valorCredito);
+    const valorParcela = this.calcularValorParcela(cenario.valorCredito, cenario.parametrosAdicionais);
 
     if (rendaMensal === 0) {
       return false; // Sem renda informada, não pode aprovar
@@ -48,18 +27,28 @@ class ComprometimentoRendaStrategy extends Strategy {
     return percentualComprometimento <= this.percentualMaximo;
   }
 
-  calcularValorParcela(valorCredito) {
-    // Lógica para calcular valor da parcela
-    // Simplificação: 10% do valor como parcela mensal
-    return valorCredito * 0.10;
+  calcularValorParcela(valorCredito, parametrosAdicionais = {}) {
+    // Lógica melhorada para calcular valor da parcela
+    const prazo = parametrosAdicionais.prazo || 12; // Prazo padrão de 12 meses
+    const taxaJuros = 0.015; // Taxa de juros mensal (1.5%)
+    
+    // Cálculo de parcela com juros compostos: P = (PV * r * (1 + r)^n) / ((1 + r)^n - 1)
+    // Onde: P = parcela, PV = valor presente, r = taxa de juros, n = número de períodos
+    const taxaJurosPotencia = Math.pow(1 + taxaJuros, prazo);
+    const numerador = valorCredito * taxaJuros * taxaJurosPotencia;
+    const denominador = taxaJurosPotencia - 1;
+    
+    const valorParcela = numerador / denominador;
+    
+    return valorParcela;
   }
 
   getNome() {
-    return "COMPROMETIMENTO_RENDA";
+    return this._nome;
   }
 
   getDescricao() {
-    return `Comprometimento máximo de renda de ${this.percentualMaximo}%`;
+    return this._descricao;
   }
 
   isAprovada() {

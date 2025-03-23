@@ -3,7 +3,10 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const errorHandler = require('./api/middleware/errorHandler');
+const performanceMonitor = require('./api/middleware/performanceMonitor');
 const criarCreditoRoutes = require('./api/routes/creditoRoutes');
+const criarClienteRoutes = require('./api/routes/clienteRoutes');
+const criarRegraDinamicaRoutes = require('./api/routes/regraDinamicaRoutes');
 
 // Importação dos componentes principais
 const Motor = require('./service/Motor.js');
@@ -23,9 +26,6 @@ const IAAdapter = require('./adapter/IAAdapter.js');
 const IdadeMinimaMandatoriaSpecification = require('./core/specifications/IdadeMinimaMandatoriaSpecification.js');
 const ScoreMinimoMandatorioSpecification = require('./core/specifications/ScoreMinimoMandatorioSpecification.js');
 
-// Importação das estratégias
-const ComprometimentoRendaStrategy = require('./core/strategies/ComprometimentoRendaStrategy.js');
-
 // Importação do serviço de log
 const LogService = require('./service/LogService.js');
 
@@ -34,6 +34,7 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+app.use(performanceMonitor());
 
 // Configuração do serviço de log
 const logService = new LogService();
@@ -44,21 +45,24 @@ const bureauCreditoAdapter = new BureauCreditoAdapter({
     // Implementação mockada com resultados aleatórios para demonstração
     const scorePossibilities = [450, 550, 650, 750, 850];
     const randomScore = scorePossibilities[Math.floor(Math.random() * scorePossibilities.length)];
+    const statusPossibilities = ["REGULAR", "IRREGULAR"];
+    const randomStatus = statusPossibilities[Math.floor(Math.random() * statusPossibilities.length)];
+    const dividas = randomStatus === "IRREGULAR" ? Math.floor(Math.random() * 5) + 1 : 0;
     
     return {
       score: randomScore,
       ultimaConsulta: new Date(),
-      status: randomScore < 500 ? "IRREGULAR" : "REGULAR"
+      status: randomStatus,
+      totalDividas: dividas,
+      valorDividas: dividas * 1000,
+      consultasRecentes: Math.floor(Math.random() * 10)
     };
   }
 });
 
 const dadosClienteAdapter = new DadosClienteAdapter({
   buscarCliente: async (clienteId) => {
-    // Implementação mockada com resultados fixos para demonstração
-    // Em um cenário real, consultaria uma base de dados
-    
-    // Para testar diferentes cenários, retorna dados diferentes baseados no ID
+    // Implementação mockada com resultados que variam com base no ID
     const lastDigit = clienteId.toString().slice(-1);
     const idNumber = parseInt(lastDigit);
     
@@ -74,14 +78,18 @@ const dadosClienteAdapter = new DadosClienteAdapter({
 
 const openBankingAdapter = new OpenBankingAdapter({
   consultarDadosBancarios: async (clienteId) => {
-    // Implementação mockada com resultados aleatórios para demonstração
+    // Implementação mockada com resultados aleatórios
+    const temConta = Math.random() > 0.2; // 80% de chance de ter conta
     const saldoMedio = Math.random() * 10000;
+    const tempoRelacionamento = Math.floor(Math.random() * 60); // 0 a 60 meses
     
     return {
-      possuiConta: true,
+      possuiConta: temConta,
       saldoMedio: saldoMedio,
       ultimaMovimentacao: new Date(),
-      status: saldoMedio > 1000 ? "ATIVO" : "INATIVO"
+      status: temConta ? "ATIVO" : "INATIVO",
+      tempoRelacionamentoMeses: tempoRelacionamento,
+      quantidadeProdutos: temConta ? Math.floor(Math.random() * 5) + 1 : 0
     };
   }
 });
@@ -93,23 +101,70 @@ const iaAdapter = new IAAdapter({
     const clienteRenda = dadosParaIA.cliente.rendaMensal;
     const bureauScore = dadosParaIA.bureau.score;
     const valorCredito = dadosParaIA.valorCredito;
+    const parametros = dadosParaIA.parametrosAdicionais || {};
 
-    // Adiciona um fator aleatório para teste
-    const fatorAleatorio = Math.random() > 0.3; // 70% de chance de aprovação
-
+    // Adiciona fatores aleatórios para teste
+    const randomFactor = Math.random();
+    
+    // 10% de chance de solicitar análise manual
+    if (randomFactor < 0.1) {
+      return {
+        aprovado: false,
+        justificativa: "Perfil do cliente requer análise humana detalhada",
+        confianca: 0.4,
+        analiseManual: true
+      };
+    }
+    
+    // 60% de chance de aprovação com alta confiança
+    const aprovadoComAltaConfianca = randomFactor < 0.7;
+    
+    // 30% de chance de reprovação com alta confiança
+    const reprovadoComAltaConfianca = randomFactor >= 0.7;
+    
     // Lógica simplificada de avaliação
     const aprovado = 
       clienteIdade >= 21 &&
-      bureauScore >= 700 &&
-      valorCredito <= clienteRenda * 10 &&
-      fatorAleatorio;
+      bureauScore >= 600 &&
+      valorCredito <= clienteRenda * 12 &&
+      aprovadoComAltaConfianca;
+
+    // Ocasionalmente gerar novas regras dinâmicas
+    let regrasGeradas = [];
+    if (Math.random() < 0.3) { // 30% de chance de gerar regras
+      if (bureauScore < 600 && clienteRenda > 8000) {
+        regrasGeradas.push({
+          nome: `SCORE_MINIMO_RENDA_ALTA_${Math.floor(Math.random() * 1000)}`,
+          descricao: `Cliente com renda acima de R$ 8.000 pode ter score mínimo de 550`,
+          tipo: 'SCORE_CONDICIONAL',
+          parametros: {
+            scoreMinimo: 550,
+            condicao: 'RENDA_ALTA',
+            rendaMinima: 8000
+          }
+        });
+      }
+      
+      if (clienteIdade < 25 && valorCredito > 10000) {
+        regrasGeradas.push({
+          nome: `LIMITE_JOVENS_${Math.floor(Math.random() * 1000)}`,
+          descricao: `Jovens abaixo de 25 anos devem ter limite máximo de R$ 10.000`,
+          tipo: 'VALOR_MAXIMO',
+          parametros: {
+            valorMaximo: 10000,
+            idadeMaxima: 25
+          }
+        });
+      }
+    }
 
     return {
       aprovado,
       justificativa: aprovado 
         ? "Perfil dentro dos parâmetros aceitáveis" 
         : "Perfil não atende aos requisitos mínimos de crédito",
-      confianca: 0.85
+      confianca: aprovadoComAltaConfianca || reprovadoComAltaConfianca ? 0.9 : 0.6,
+      regrasGeradas
     };
   }
 });
@@ -120,14 +175,9 @@ const regrasMandatorias = [
   new ScoreMinimoMandatorioSpecification(500)
 ];
 
-// Inicialização das regras dinâmicas
-const regrasDinamicas = [
-  new ComprometimentoRendaStrategy(30, true) // 30% comprometimento máximo, regra aprovada
-];
-
-// Inicialização dos handlers
+// Inicialização dos handlers com regras dinâmicas vazias (serão carregadas do banco)
 const regrasMandatoriasHandler = new RegrasMandatoriasHandler(regrasMandatorias);
-const regrasDinamicasHandler = new RegrasDinamicasHandler(regrasDinamicas);
+const regrasDinamicasHandler = new RegrasDinamicasHandler([]); // Sem regras hardcoded, todas vêm do banco
 const requisicaoIAHandler = new RequisicaoIAHandler(iaAdapter);
 
 // Configuração da cadeia de responsabilidade
@@ -149,13 +199,16 @@ const motor = new Motor(gerenciadorCenario, chainOfResponsibility, logService);
 
 // Configuração das rotas
 app.use('/api/credito', criarCreditoRoutes(motor));
+app.use('/api/clientes', criarClienteRoutes());
+app.use('/api/regras-dinamicas', criarRegraDinamicaRoutes());
 
 // Rota de saúde
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     message: 'Serviço disponível',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    version: '1.1.0' // Versão atualizada com suporte a regras dinâmicas
   });
 });
 
