@@ -1,4 +1,5 @@
 // src/core/chain/handlers/RequisicaoIAHandler.js
+const { restaurarMetodosCenario } = require('../../../utils/CenarioHelper');
 
 class RequisicaoIAHandler {
     constructor(iaAdapter) {
@@ -6,9 +7,8 @@ class RequisicaoIAHandler {
     }
   
     async processar(cenario) {
-      // Não cria uma cópia simples do objeto, pois isso não copia os métodos
-      // Usamos o cenário original diretamente
-      const cenarioProcessado = cenario;
+      // Restaura os métodos do cenário se estiverem faltando
+      const cenarioProcessado = restaurarMetodosCenario(cenario);
   
       // Verifica se já falhou em alguma regra anterior ou precisa análise manual
       if (cenarioProcessado.regraFalhou || cenarioProcessado.precisaAnaliseManual) {

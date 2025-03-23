@@ -14,6 +14,12 @@ class Motor {
 
       // Criação e carregamento do cenário
       const cenario = await this.gerenciadorCenario.criarCenario(clienteId, valorCredito, parametrosAdicionais);
+      
+      // Verificação de segurança
+      if (typeof cenario.getDadosPorTipo !== 'function') {
+        console.error('ERRO: Cenario criado sem o método getDadosPorTipo!');
+        throw new Error('Cenario inválido: método getDadosPorTipo não encontrado');
+      }
 
       // Processamento do cenário na camada core
       const cenarioProcessado = await this.chainOfResponsibility.processar(cenario);

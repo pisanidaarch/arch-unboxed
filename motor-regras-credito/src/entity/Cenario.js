@@ -80,6 +80,21 @@ class Cenario {
       const dao = new CenarioDAO();
       return await dao.buscarPorCliente(clienteId);
     }
+    
+    /**
+     * Método auxiliar para debugging
+     */
+    logInfo() {
+      console.log('Cenário:', {
+        id: this.id,
+        clienteId: this.clienteId,
+        valorCredito: this.valorCredito,
+        regraFalhou: this.regraFalhou,
+        precisaAnaliseManual: this.precisaAnaliseManual,
+        dadosCenario: this.dadosCenario.map(d => ({ tipo: d.tipo })),
+        resultadosAvaliacao: this.resultadosAvaliacao.length
+      });
+    }
   }
   
   module.exports = Cenario;

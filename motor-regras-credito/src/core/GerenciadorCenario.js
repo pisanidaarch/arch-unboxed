@@ -14,6 +14,12 @@ class GerenciadorCenario {
     cenario.parametrosAdicionais = parametrosAdicionais;
     cenario.dataCriacao = new Date();
 
+    // Verificação de segurança
+    if (typeof cenario.getDadosPorTipo !== 'function') {
+      console.error('ERRO: Cenario criado sem o método getDadosPorTipo!');
+      throw new Error('Cenario inválido: método getDadosPorTipo não encontrado');
+    }
+
     // Carregar dados de todos os adaptadores registrados
     for (const adapter of this.adapters) {
       try {
@@ -24,6 +30,9 @@ class GerenciadorCenario {
         // Continue carregando outros dados mesmo se houver falha em um adapter
       }
     }
+
+    // Verificação final
+    console.log('Cenario criado com sucesso, tem getDadosPorTipo:', typeof cenario.getDadosPorTipo === 'function');
 
     return cenario;
   }

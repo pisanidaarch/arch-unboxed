@@ -1,6 +1,23 @@
 // src/core/strategies/ComprometimentoRendaStrategy.js
 const Strategy = require('./Strategy');
 
+/**
+ * Restaura os métodos da classe Cenario se eles estiverem faltando.
+ */
+function restaurarMetodosCenario(cenario) {
+  // Adiciona método getDadosPorTipo se estiver faltando
+  if (typeof cenario.getDadosPorTipo !== 'function') {
+    cenario.getDadosPorTipo = function(tipo) {
+      if (!Array.isArray(this.dadosCenario)) {
+        return {};
+      }
+      const item = this.dadosCenario.find(d => d.tipo === tipo);
+      return item ? item.dados : {};
+    };
+  }
+  return cenario;
+}
+
 class ComprometimentoRendaStrategy extends Strategy {
   constructor(percentualMaximo, aprovada) {
     super();
@@ -9,6 +26,16 @@ class ComprometimentoRendaStrategy extends Strategy {
   }
 
   execute(cenario) {
+    // Restaura os métodos do cenário se estiverem faltando
+    cenario = restaurarMetodosCenario(cenario);
+
+    // Verificação de segurança - para debugging
+    if (typeof cenario.getDadosPorTipo !== 'function') {
+      console.error('ERRO: cenario.getDadosPorTipo não é uma função mesmo após restauração!');
+      console.error('cenario:', JSON.stringify(cenario));
+      return false; // Falha de segurança
+    }
+
     const dadosCliente = cenario.getDadosPorTipo("DADOS_CLIENTE");
     const rendaMensal = dadosCliente?.rendaMensal || 0;
     const valorParcela = this.calcularValorParcela(cenario.valorCredito);

@@ -1,4 +1,5 @@
 // src/core/chain/handlers/RegrasMandatoriasHandler.js
+const { restaurarMetodosCenario } = require('../../../utils/CenarioHelper');
 
 class RegrasMandatoriasHandler {
   constructor(specifications) {
@@ -6,9 +7,8 @@ class RegrasMandatoriasHandler {
   }
 
   async processar(cenario) {
-    // Não cria uma cópia simples do objeto, pois isso não copia os métodos
-    // Usamos o cenário original diretamente
-    const cenarioProcessado = cenario;
+    // Restaura os métodos do cenário se estiverem faltando
+    const cenarioProcessado = restaurarMetodosCenario(cenario);
 
     for (const spec of this.specifications) {
       const resultado = await spec.isSatisfiedBy(cenarioProcessado);

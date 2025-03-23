@@ -13,6 +13,11 @@ class CenarioDAO {
    */
   async salvar(cenario) {
     try {
+      // Garantir que parametrosAdicionais seja uma string JSON válida
+      const parametrosJSON = typeof cenario.parametrosAdicionais === 'string' 
+        ? cenario.parametrosAdicionais 
+        : JSON.stringify(cenario.parametrosAdicionais || {});
+
       // Inserir cenário na tabela cenarios
       await this.db('cenarios').insert({
         id: cenario.id,
@@ -22,7 +27,7 @@ class CenarioDAO {
         status: cenario.status,
         regra_falhou: cenario.regraFalhou,
         precisa_analise_manual: cenario.precisaAnaliseManual,
-        parametros_adicionais: JSON.stringify(cenario.parametrosAdicionais || {})
+        parametros_adicionais: parametrosJSON
       });
 
       // Inserir resultados de avaliação
@@ -81,6 +86,27 @@ class CenarioDAO {
         .where('cenario_id', id)
         .first();
 
+      // Parse seguro dos parametros_adicionais
+      let parametrosAdicionais = {};
+      try {
+        if (cenario.parametros_adicionais) {
+          // Verificar se parametros_adicionais já é um objeto
+          if (typeof cenario.parametros_adicionais === 'object' && cenario.parametros_adicionais !== null) {
+            parametrosAdicionais = cenario.parametros_adicionais;
+          } else if (cenario.parametros_adicionais === '[object Object]') {
+            // Se for a string '[object Object]', definir como objeto vazio
+            parametrosAdicionais = {};
+          } else {
+            // Tentar fazer o parse
+            parametrosAdicionais = JSON.parse(cenario.parametros_adicionais);
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao fazer parse dos parâmetros adicionais:', e);
+        console.error('Valor original:', cenario.parametros_adicionais);
+        parametrosAdicionais = {}; // Usar objeto vazio em caso de erro
+      }
+
       // Construir objeto completo
       return {
         id: cenario.id,
@@ -90,7 +116,7 @@ class CenarioDAO {
         status: cenario.status,
         regraFalhou: cenario.regra_falhou,
         precisaAnaliseManual: cenario.precisa_analise_manual,
-        parametrosAdicionais: JSON.parse(cenario.parametros_adicionais || '{}'),
+        parametrosAdicionais: parametrosAdicionais,
         resultadosAvaliacao: resultadosAvaliacao.map(r => ({
           regra: r.regra,
           resultado: r.resultado,
