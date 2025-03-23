@@ -6,28 +6,28 @@ const errorHandler = require('./api/middleware/errorHandler');
 const criarCreditoRoutes = require('./api/routes/creditoRoutes');
 
 // Importação dos componentes principais
-const Motor = require('./service/Motor');
-const GerenciadorCenario = require('./core/GerenciadorCenario');
-const ChainOfResponsibility = require('./core/chain/ChainOfResponsibility');
-const RegrasMandatoriasHandler = require('./core/chain/handlers/RegrasMandatoriasHandler');
-const RegrasDinamicasHandler = require('./core/chain/handlers/RegrasDinamicasHandler');
-const RequisicaoIAHandler = require('./core/chain/handlers/RequisicaoIAHandler');
+const Motor = require('./service/Motor.js');
+const GerenciadorCenario = require('./core/GerenciadorCenario.js');
+const ChainOfResponsibility = require('./core/chain/ChainOfResponsibility.js');
+const RegrasMandatoriasHandler = require('./core/chain/handlers/RegrasMandatoriasHandler.js');
+const RegrasDinamicasHandler = require('./core/chain/handlers/RegrasDinamicasHandler.js');
+const RequisicaoIAHandler = require('./core/chain/handlers/RequisicaoIAHandler.js');
 
 // Importação dos adaptadores
-const BureauCreditoAdapter = require('./adapter/BureauCreditoAdapter');
-const DadosClienteAdapter = require('./adapter/DadosClienteAdapter');
-const OpenBankingAdapter = require('./adapter/OpenBankingAdapter');
-const IAAdapter = require('./adapter/IAAdapter');
+const BureauCreditoAdapter = require('./adapter/BureauCreditoAdapter.js');
+const DadosClienteAdapter = require('./adapter/DadosClienteAdapter.js');
+const OpenBankingAdapter = require('./adapter/OpenBankingAdapter.js');
+const IAAdapter = require('./adapter/IAAdapter.js');
 
 // Importação das especificações
-const IdadeMinimaMandatoriaSpecification = require('./core/specifications/IdadeMinimaMandatoriaSpecification');
-const ScoreMinimoMandatorioSpecification = require('./core/specifications/ScoreMinimoMandatorioSpecification');
+const IdadeMinimaMandatoriaSpecification = require('./core/specifications/IdadeMinimaMandatoriaSpecification.js');
+const ScoreMinimoMandatorioSpecification = require('./core/specifications/ScoreMinimoMandatorioSpecification.js');
 
 // Importação das estratégias
-const ComprometimentoRendaStrategy = require('./core/strategies/ComprometimentoRendaStrategy');
+const ComprometimentoRendaStrategy = require('./core/strategies/ComprometimentoRendaStrategy.js');
 
 // Importação do serviço de log
-const LogService = require('./service/LogService');
+const LogService = require('./service/LogService.js');
 
 // Configuração da aplicação
 const app = express();
