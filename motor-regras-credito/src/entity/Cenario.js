@@ -14,6 +14,7 @@ class Cenario {
       this.resultadosAvaliacao = [];
       this.resultadoIA = null;
       this.parametrosAdicionais = {};
+      this.motivoAnaliseManual = null;
       this.dao = new CenarioDAO();
     }
   
@@ -22,10 +23,19 @@ class Cenario {
     }
   
     adicionarDados(tipo, dados) {
-      this.dadosCenario.push({
-        tipo,
-        dados
-      });
+      // Verifica se já existe dados deste tipo
+      const existingIndex = this.dadosCenario.findIndex(d => d.tipo === tipo);
+      
+      if (existingIndex >= 0) {
+        // Atualiza dados existentes
+        this.dadosCenario[existingIndex].dados = dados;
+      } else {
+        // Adiciona novos dados
+        this.dadosCenario.push({
+          tipo,
+          dados
+        });
+      }
     }
   
     getDadosPorTipo(tipo) {
@@ -45,6 +55,51 @@ class Cenario {
     todosResultadosAprovados() {
       return this.resultadosAvaliacao.length > 0 &&
         this.resultadosAvaliacao.every(r => r.resultado === true);
+    }
+
+    /**
+     * Transforma o cenário em um objeto JSON para envio à IA
+     * Inclui todos os dados relevantes para a análise
+     */
+    toJsonForIA() {
+      // Obter dados do cliente formatados para IA
+      const dadosCliente = this.getDadosPorTipo("DADOS_CLIENTE") || {};
+      const dadosBureau = this.getDadosPorTipo("BUREAU_CREDITO") || {};
+      const dadosOpenBanking = this.getDadosPorTipo("OPEN_BANKING") || {};
+      
+      return {
+        id: this.id,
+        clienteId: this.clienteId,
+        valorCredito: typeof this.valorCredito === 'number' ? this.valorCredito.toString() : this.valorCredito,
+        dataCriacao: this.dataCriacao.toISOString(),
+        cliente: {
+          nome: dadosCliente.nome || "Desconhecido",
+          idade: dadosCliente.idade || 0,
+          sexo: dadosCliente.sexo || "Desconhecido",
+          rendaMensal: dadosCliente.rendaMensal || 0,
+          email: dadosCliente.email || "",
+          telefone: dadosCliente.telefone || "",
+          endereco: dadosCliente.endereco || "",
+          cidade: dadosCliente.cidade || "",
+          estado: dadosCliente.estado || "",
+          cpf: dadosCliente.cpf || ""
+        },
+        bureau: {
+          score: dadosBureau.score || 0,
+          status: dadosBureau.status || "DESCONHECIDO",
+          totalDividas: dadosBureau.totalDividas || 0,
+          valorDividas: dadosBureau.valorDividas || 0,
+          consultasRecentes: dadosBureau.consultasRecentes || 0
+        },
+        openBanking: {
+          possuiConta: dadosOpenBanking.possuiConta || false,
+          saldoMedio: dadosOpenBanking.saldoMedio || 0,
+          status: dadosOpenBanking.status || "DESCONHECIDO",
+          tempoRelacionamentoMeses: dadosOpenBanking.tempoRelacionamentoMeses || 0,
+          quantidadeProdutos: dadosOpenBanking.quantidadeProdutos || 0
+        },
+        resultadosAvaliacao: this.resultadosAvaliacao || []
+      };
     }
 
     /**
@@ -91,6 +146,7 @@ class Cenario {
         valorCredito: this.valorCredito,
         regraFalhou: this.regraFalhou,
         precisaAnaliseManual: this.precisaAnaliseManual,
+        motivoAnaliseManual: this.motivoAnaliseManual,
         dadosCenario: this.dadosCenario.map(d => ({ tipo: d.tipo })),
         resultadosAvaliacao: this.resultadosAvaliacao.length
       });

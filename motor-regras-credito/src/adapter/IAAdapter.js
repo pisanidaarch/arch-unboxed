@@ -8,8 +8,10 @@ class IAAdapter {
     this.regraDinamicaDAO = new RegraDinamicaDAO();
     
     // Configuração do endpoint da IA
-    this.endpoint = process.env.IA_ENDPOINT || 'https://agent-fwsknwjtwgows7bbq34wgyka-lacbb.ondigitalocean.app/api/v1/chat/completions';
-    this.accessKey = process.env.IA_ACCESS_KEY || 'tLNu967VSaTZkiWzvNJvAX5a4cnN7ilb';
+    this.endpoint = options.endpoint || process.env.IA_ENDPOINT || 'https://agent-fwsknwjtwgows7bbq34wgyka-lacbb.ondigitalocean.app/api/v1/chat/completions';
+    this.accessKey = options.accessKey || process.env.IA_ACCESS_KEY || 'tLNu967VSaTZkiWzvNJvAX5a4cnN7ilb';
+    
+    console.log('IAAdapter inicializado com endpoint:', this.endpoint);
     
     // Tempo limite para requisição (default: 8 segundos)
     this.timeout = options.timeout || 8000;
@@ -56,51 +58,47 @@ class IAAdapter {
   }
 
   prepararDadosParaIA(cenario) {
+    // Usar o método toJsonForIA se disponível, ou construir manualmente
+    if (typeof cenario.toJsonForIA === 'function') {
+      return cenario.toJsonForIA();
+    }
+    
+    // Fallback para o caso do método não estar disponível
     return {
+      id: cenario.id,
+      clienteId: cenario.clienteId,
+      valorCredito: cenario.valorCredito,
+      dataCriacao: cenario.dataCriacao,
       cliente: cenario.getDadosPorTipo("DADOS_CLIENTE"),
       bureau: cenario.getDadosPorTipo("BUREAU_CREDITO"),
       openBanking: cenario.getDadosPorTipo("OPEN_BANKING"),
-      valorCredito: cenario.valorCredito,
       parametrosAdicionais: cenario.parametrosAdicionais,
-      resultadosAnteriores: cenario.resultadosAvaliacao
+      resultadosAvaliacao: cenario.resultadosAvaliacao
     };
   }
 
   formatarMensagemIA(dadosParaIA) {
-    // Formatar a mensagem para enviar à IA
-    return `Por favor, avalie esta solicitação de crédito baseada nos seguintes dados:
-      
-DADOS DO CLIENTE:
-${JSON.stringify(dadosParaIA.cliente, null, 2)}
+    // Formatar o JSON para enviar à IA conforme especificação
+    const cenario = {
+      id: dadosParaIA.id || "cen_" + Math.random().toString(36).substring(2, 15),
+      clienteId: dadosParaIA.clienteId,
+      valorCredito: dadosParaIA.valorCredito.toString(),
+      dataCriacao: new Date().toISOString(),
+      cliente: dadosParaIA.cliente,
+      bureau: dadosParaIA.bureau,
+      openBanking: dadosParaIA.openBanking,
+      resultadosAvaliacao: dadosParaIA.resultadosAnteriores || []
+    };
+    
+    // Instruction para a IA conforme solicitado
+    return `O usuário irá informar um json com informações do cenário de crédito como o exemplo abaixo: 
+${JSON.stringify(cenario, null, 2)}
 
-DADOS DO BUREAU DE CRÉDITO:
-${JSON.stringify(dadosParaIA.bureau, null, 2)}
-
-DADOS BANCÁRIOS (OPEN BANKING):
-${JSON.stringify(dadosParaIA.openBanking, null, 2)}
-
-SOLICITAÇÃO DE CRÉDITO:
-- Valor: R$ ${dadosParaIA.valorCredito.toFixed(2)}
-- Parâmetros Adicionais: ${JSON.stringify(dadosParaIA.parametrosAdicionais, null, 2)}
-
-RESULTADOS DE AVALIAÇÕES ANTERIORES:
-${JSON.stringify(dadosParaIA.resultadosAnteriores, null, 2)}
-
-Por favor, forneça um JSON com a seguinte estrutura:
-{
-  "aprovado": true/false,
-  "justificativa": "Explicação da decisão",
-  "confianca": 0.0-1.0,
-  "analiseManual": true/false,
-  "regrasGeradas": [
-    {
-      "nome": "NOME_DA_REGRA",
-      "descricao": "Descrição da regra",
-      "tipo": "TIPO_DA_REGRA",
-      "parametros": { ... }
-    }
-  ]
-}`;
+A sua missão será determinar se devemos ou não aprovar o crédito solicitado pelo usuário no json ("valorCredito") com base nas informações históricas. Você deve retornar somente os números 0,1 ou 2 sendo:
+0: Se for no minimo 80% de certeza de que você não deveria aprovar;
+1: Se for no mínimo 80% de certeza de que você deveria aprovar;
+2: Para todos os demais cenários, devido a necessitar de aprovação manual.
+IMPORTANT: you must return only the number: 0 or 1 or 2;`;
   }
 
   async chamarAPI(mensagem) {
@@ -145,28 +143,49 @@ Por favor, forneça um JSON com a seguinte estrutura:
         throw new Error('Resposta da IA não contém conteúdo válido');
       }
       
-      // Procurar pelo JSON na resposta
-      const jsonMatch = conteudoResposta.match(/```json\n([\s\S]*?)\n```/) || 
-                         conteudoResposta.match(/\{[\s\S]*\}/);
+      // Limpar a resposta e extrair apenas o número
+      const respLimpa = conteudoResposta.trim();
+      const respostaNumero = parseInt(respLimpa);
       
-      let jsonString = jsonMatch ? jsonMatch[1] || jsonMatch[0] : conteudoResposta;
+      // Verificar se é um número válido (0, 1 ou 2)
+      if (isNaN(respostaNumero) || ![0, 1, 2].includes(respostaNumero)) {
+        console.error('Resposta da IA não contém um número válido:', respLimpa);
+        throw new Error(`Resposta da IA não é 0, 1 ou 2: ${respLimpa}`);
+      }
       
-      // Limpar a string JSON para evitar problemas com formatação
-      jsonString = jsonString.replace(/```json|```/g, '').trim();
+      // Converter para o formato esperado pela aplicação
+      let resultado = {
+        aprovado: false,
+        justificativa: "",
+        confianca: 0.8, // Valor padrão para confiança (80%)
+        analiseManual: false
+      };
       
-      // Converter para objeto
-      const resultado = JSON.parse(jsonString);
-      
-      // Validar campos obrigatórios
-      if (resultado.aprovado === undefined) {
-        throw new Error('Resposta da IA não contém o campo "aprovado"');
+      // Interpretar o código de resposta
+      switch (respostaNumero) {
+        case 0: // Rejeição com alta confiança
+          resultado.aprovado = false;
+          resultado.justificativa = "IA rejeitou o crédito com alta confiança";
+          resultado.confianca = 0.8;
+          break;
+        case 1: // Aprovação com alta confiança
+          resultado.aprovado = true;
+          resultado.justificativa = "IA aprovou o crédito com alta confiança";
+          resultado.confianca = 0.8;
+          break;
+        case 2: // Necessidade de análise manual
+          resultado.aprovado = false;
+          resultado.justificativa = "IA solicitou análise manual para o crédito";
+          resultado.confianca = 0.5;
+          resultado.analiseManual = true;
+          break;
       }
       
       return resultado;
     } catch (error) {
       console.error('Erro ao processar resposta da IA:', error);
       
-      // Em caso de erro no processamento, retornar um resultado conservador
+      // Em caso de erro no processamento, retornar um resultado que indica necessidade de análise manual
       return {
         aprovado: false,
         justificativa: "Erro ao interpretar resposta da IA. Recomendação para análise manual.",
@@ -182,13 +201,27 @@ Por favor, forneça um JSON com a seguinte estrutura:
    */
   async persistirRegrasGeradas(regras) {
     try {
+      if (!regras || !Array.isArray(regras) || regras.length === 0) {
+        return; // Não há regras para persistir
+      }
+      
+      // Obter todas as regras existentes
+      const regrasExistentes = await this.regraDinamicaDAO.listar();
+      
       for (const regra of regras) {
         // Verificar se a regra já existe com o mesmo nome
-        const regrasExistentes = await this.regraDinamicaDAO.listar();
         const regraExistente = regrasExistentes.find(r => r.nome === regra.nome);
         
         if (regraExistente) {
           console.log(`Regra ${regra.nome} já existe, pulando inserção.`);
+          continue;
+        }
+        
+        // Verificar se existe uma regra similar (mesmo tipo e parâmetros similares)
+        const regraSimilar = this.encontrarRegraSimilar(regra, regrasExistentes);
+        
+        if (regraSimilar) {
+          console.log(`Regra similar já existe (${regraSimilar.nome}), pulando inserção.`);
           continue;
         }
         
@@ -208,6 +241,78 @@ Por favor, forneça um JSON com a seguinte estrutura:
     } catch (error) {
       console.error('Erro ao persistir regras geradas pela IA:', error);
     }
+  }
+  
+  /**
+   * Verifica se já existe uma regra similar à nova regra
+   * @param {Object} novaRegra - Regra a ser verificada
+   * @param {Array} regrasExistentes - Lista de regras existentes
+   * @returns {Object|null} Regra similar ou null se não existir
+   */
+  encontrarRegraSimilar(novaRegra, regrasExistentes) {
+    // Filtra por regras do mesmo tipo
+    const regrasDoMesmoTipo = regrasExistentes.filter(r => r.tipo === novaRegra.tipo);
+    
+    if (!regrasDoMesmoTipo.length) {
+      return null;
+    }
+    
+    // Compara os parâmetros para verificar similaridade
+    for (const regra of regrasDoMesmoTipo) {
+      const parametrosExistente = regra.parametros;
+      const parametrosNova = novaRegra.parametros;
+      
+      // Verificar similaridade com base no tipo da regra
+      switch (novaRegra.tipo) {
+        case 'COMPROMETIMENTO_RENDA':
+          // Verifica se o percentual máximo é igual ou similar (dentro de 5%)
+          if (parametrosExistente.percentualMaximo && parametrosNova.percentualMaximo) {
+            const diff = Math.abs(parametrosExistente.percentualMaximo - parametrosNova.percentualMaximo);
+            if (diff <= 5) { // Diferença de até 5% é considerada similar
+              return regra;
+            }
+          }
+          break;
+          
+        case 'VALOR_MAXIMO':
+          // Verifica se o valor máximo é igual ou similar (dentro de 10%)
+          if (parametrosExistente.valorMaximo && parametrosNova.valorMaximo) {
+            const diff = Math.abs(parametrosExistente.valorMaximo - parametrosNova.valorMaximo);
+            const percentDiff = diff / parametrosExistente.valorMaximo * 100;
+            if (percentDiff <= 10) { // Diferença de até 10% é considerada similar
+              return regra;
+            }
+          }
+          break;
+          
+        case 'SCORE_CONDICIONAL':
+          // Verifica se o score mínimo e a condição são iguais ou similares
+          if (parametrosExistente.scoreMinimo && parametrosNova.scoreMinimo &&
+              parametrosExistente.condicao === parametrosNova.condicao) {
+            const diff = Math.abs(parametrosExistente.scoreMinimo - parametrosNova.scoreMinimo);
+            if (diff <= 50) { // Diferença de até 50 pontos é considerada similar
+              return regra;
+            }
+          }
+          break;
+          
+        case 'PRAZO_MINIMO':
+          // Verifica se o valor mínimo e o prazo mínimo são iguais ou similares
+          if (parametrosExistente.valorMinimo && parametrosNova.valorMinimo &&
+              parametrosExistente.prazoMinimo && parametrosNova.prazoMinimo) {
+            const diffValor = Math.abs(parametrosExistente.valorMinimo - parametrosNova.valorMinimo);
+            const percentDiffValor = diffValor / parametrosExistente.valorMinimo * 100;
+            const diffPrazo = Math.abs(parametrosExistente.prazoMinimo - parametrosNova.prazoMinimo);
+            
+            if (percentDiffValor <= 10 && diffPrazo <= 6) { // Diferença de até 10% no valor e 6 meses no prazo
+              return regra;
+            }
+          }
+          break;
+      }
+    }
+    
+    return null;
   }
 }
 
