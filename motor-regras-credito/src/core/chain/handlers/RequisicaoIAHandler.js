@@ -12,19 +12,11 @@ class RequisicaoIAHandler {
     // Restaura os métodos do cenário se estiverem faltando
     const cenarioProcessado = restaurarMetodosCenario(cenario);
 
-    // Verifica se já falhou em alguma regra anterior
-    if (cenarioProcessado.regraFalhou) {
-      return cenarioProcessado;
-    }
-
-    // Se já precisa análise manual por outro motivo, não consulta a IA
-    if (cenarioProcessado.precisaAnaliseManual) {
-      // Mas registra o motivo
-      if (!cenarioProcessado.motivoAnaliseManual) {
-        cenarioProcessado.motivoAnaliseManual = 'Regras dinâmicas requerem aprovação humana';
-      }
-      return cenarioProcessado;
-    }
+    // MODIFICAÇÃO: Removida a verificação de regraFalhou e precisaAnaliseManual
+    // para permitir que a IA sempre seja consultada
+    
+    console.log(`RequisicaoIAHandler: Processando cenário para cliente ${cenarioProcessado.clienteId}`);
+    console.log(`Status cenário: regraFalhou=${cenarioProcessado.regraFalhou}, precisaAnaliseManual=${cenarioProcessado.precisaAnaliseManual}`);
 
     try {
       this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, true);
@@ -33,48 +25,38 @@ class RequisicaoIAHandler {
       const resultadoIA = await this.iaAdapter.avaliarCredito(cenarioProcessado);
       cenarioProcessado.resultadoIA = resultadoIA;
 
-      // Processar o resultado com base no código retornado pela IA (0, 1 ou 2)
-      if (resultadoIA.analiseManual) {
-        // Caso 2: Análise manual
-        cenarioProcessado.precisaAnaliseManual = true;
-        cenarioProcessado.motivoAnaliseManual = resultadoIA.justificativa || 'IA solicitou análise humana';
-        
-        cenarioProcessado.adicionarResultadoAvaliacao(
-          "IA_SOLICITA_ANALISE",
-          false,
-          resultadoIA.justificativa || "A IA solicitou análise humana para este caso"
-        );
-        
-        return cenarioProcessado;
-      } else if (resultadoIA.aprovado) {
-        // Caso 1: Aprovação
-        cenarioProcessado.adicionarResultadoAvaliacao(
-          "IA",
-          true,
-          resultadoIA.justificativa || "IA aprovou o crédito com alta confiança"
-        );
-      } else {
-        // Caso 0: Reprovação
-        cenarioProcessado.adicionarResultadoAvaliacao(
-          "IA",
-          false,
-          resultadoIA.justificativa || "IA rejeitou o crédito com alta confiança"
-        );
-        cenarioProcessado.regraFalhou = true;
-      }
+      console.log(`Resultado IA: aprovado=${resultadoIA.aprovado}, analiseManual=${resultadoIA.analiseManual}, confiança=${resultadoIA.confianca}`);
+      console.log(`Justificativa IA: ${resultadoIA.justificativa}`);
+
+      // MODIFICAÇÃO: Não alteramos mais o estado do cenário com base na resposta da IA
+      // apenas adicionamos o resultado para referência
+      // A lógica para definir o status final acontece na Chain of Responsibility
+      
+      // Adicionamos a avaliação da IA nos resultados para registro
+      cenarioProcessado.adicionarResultadoAvaliacao(
+        "RESULTADO_IA",
+        resultadoIA.aprovado && !resultadoIA.analiseManual,
+        resultadoIA.justificativa || 
+        (resultadoIA.aprovado 
+          ? "IA recomendou aprovação" 
+          : (resultadoIA.analiseManual 
+              ? "IA recomendou análise manual" 
+              : "IA recomendou reprovação"))
+      );
+      
+      console.log(`RequisicaoIAHandler: Processamento concluído`);
     } catch (error) {
       console.error('[RequisicaoIAHandler] Erro ao consultar IA:', error);
       this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, false);
       
-      // Em caso de erro na IA, enviar para análise manual por segurança
-      cenarioProcessado.precisaAnaliseManual = true;
-      cenarioProcessado.motivoAnaliseManual = 'Erro ao consultar sistema de IA';
-      
+      // Registramos o erro da IA
       cenarioProcessado.adicionarResultadoAvaliacao(
         "ERRO_IA",
         false,
-        "Erro ao consultar sistema de IA. Encaminhado para análise manual."
+        "Erro ao consultar sistema de IA: " + error.message
       );
+      
+      // Não definimos precisaAnaliseManual aqui, isso será feito na Chain
     }
 
     return cenarioProcessado;

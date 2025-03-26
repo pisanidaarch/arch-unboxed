@@ -10,49 +10,133 @@ class IAAdapter {
     // Configuração do endpoint da IA
     this.endpoint = options.endpoint || process.env.IA_ENDPOINT || 'https://agent-fwsknwjtwgows7bbq34wgyka-lacbb.ondigitalocean.app/api/v1/chat/completions';
     this.accessKey = options.accessKey || process.env.IA_ACCESS_KEY || 'tLNu967VSaTZkiWzvNJvAX5a4cnN7ilb';
+    this.model = options.model || process.env.IA_MODEL || 'anthropic.claude-3-haiku-20240307';
     
-    console.log('IAAdapter inicializado com endpoint:', this.endpoint);
+    console.log('=================== INICIALIZAÇÃO DO ADAPTER IA ===================');
+    console.log(`➡️ Endpoint: ${this.endpoint}`);
+    console.log(`➡️ Modelo: ${this.model}`);
+    console.log(`➡️ Access Key configurada: ${this.accessKey ? 'Sim (***' + this.accessKey.slice(-4) + ')' : 'Não'}`);
+    console.log('===================================================================');
     
-    // Tempo limite para requisição (default: 8 segundos)
-    this.timeout = options.timeout || 8000;
+    // Tempo limite para requisição (default: 10 segundos)
+    this.timeout = options.timeout || parseInt(process.env.TIMEOUT_IA || '10000');
+    
+    // Definição da ferramenta de function calling para decisão de crédito
+    this.tools = [
+      {
+        type: "function",
+        function: {
+          name: "creditDecision",
+          description: "Decide if a credit application should be approved, rejected, or sent for manual review",
+          parameters: {
+            type: "object",
+            properties: {
+              decision: {
+                type: "string",
+                enum: ["APPROVE", "REJECT", "MANUAL_REVIEW"],
+                description: "The decision for the credit application"
+              },
+              confidence: {
+                type: "number",
+                description: "Confidence level in the decision (0-1)",
+                minimum: 0,
+                maximum: 1
+              },
+              justification: {
+                type: "string",
+                description: "Brief explanation for the decision"
+              },
+              suggestedRules: {
+                type: "array",
+                description: "Optional suggested new dynamic rules based on this analysis",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: {
+                      type: "string",
+                      description: "Name of the rule"
+                    },
+                    description: {
+                      type: "string",
+                      description: "Description of the rule"
+                    },
+                    type: {
+                      type: "string",
+                      enum: ["COMPROMETIMENTO_RENDA", "VALOR_MAXIMO", "SCORE_CONDICIONAL", "PRAZO_MINIMO"],
+                      description: "Type of the rule"
+                    },
+                    parameters: {
+                      type: "object",
+                      description: "Parameters specific to the rule type"
+                    }
+                  },
+                  required: ["name", "description", "type", "parameters"]
+                }
+              }
+            },
+            required: ["decision", "confidence"]
+          }
+        }
+      }
+    ];
   }
 
   async avaliarCredito(cenario) {
+    console.log('\n================== INICIANDO AVALIAÇÃO DE CRÉDITO IA ==================');
+    console.log(`📋 Cliente ID: ${cenario.clienteId}`);
+    console.log(`💰 Valor solicitado: R$ ${cenario.valorCredito}`);
+    
     try {
       // Prepara os dados para envio à IA
+      console.log('🔄 Preparando dados para IA...');
       const dadosParaIA = this.prepararDadosParaIA(cenario);
       
-      // Formatar a mensagem para a API de IA
-      const mensagem = this.formatarMensagemIA(dadosParaIA);
+      // Logging de dados principais
+      console.log(`🧐 Score do cliente: ${dadosParaIA.bureau?.score || 'Não disponível'}`);
+      console.log(`💼 Renda mensal: R$ ${dadosParaIA.cliente?.rendaMensal || 'Não disponível'}`);
+      console.log(`⏱️ Tempo de relacionamento: ${dadosParaIA.openBanking?.tempoRelacionamentoMeses || 'Não disponível'} meses`);
       
-      // Chama a API de IA
-      const resultadoAPI = await this.chamarAPI(mensagem);
+      // Chama a API de IA com function calling
+      console.log('📞 Chamando API IA com function calling...');
+      console.log(`⏱️ Timeout configurado: ${this.timeout}ms`);
+      const startTime = Date.now();
       
-      // Processar a resposta da IA
-      const resultadoProcessado = this.processarRespostaIA(resultadoAPI);
+      const resultadoAPI = await this.chamarAPIComFunctionCalling(dadosParaIA);
       
-      // Verificar se a IA sugere a criação de novas regras dinâmicas
-      if (resultadoProcessado.regrasGeradas && Array.isArray(resultadoProcessado.regrasGeradas)) {
-        // Persistir as novas regras no banco de dados
-        await this.persistirRegrasGeradas(resultadoProcessado.regrasGeradas);
-      }
-
-      // Retornar o resultado da avaliação
-      return new ResultadoIA(
-        resultadoProcessado.aprovado,
-        resultadoProcessado.justificativa || "Avaliação realizada pelo sistema de IA",
-        resultadoProcessado.confianca || 0.7,
-        resultadoProcessado.analiseManual || false
-      );
+      const endTime = Date.now();
+      console.log(`✅ Resposta recebida em ${((endTime - startTime)/1000).toFixed(2)} segundos`);
+      
+      // Processar a resposta da API
+      console.log('🔍 Processando resposta da IA...');
+      const resultadoIA = await this.processarRespostaFunctionCalling(resultadoAPI, cenario.clienteId);
+      
+      console.log('📊 Resultado da análise IA:');
+      console.log(`🔴 Aprovado: ${resultadoIA.aprovado ? 'SIM' : 'NÃO'}`);
+      console.log(`🔵 Análise Manual: ${resultadoIA.analiseManual ? 'SIM' : 'NÃO'}`);
+      console.log(`🟢 Confiança: ${(resultadoIA.confianca * 100).toFixed(0)}%`);
+      console.log(`🟡 Justificativa: ${resultadoIA.justificativa}`);
+      console.log('===================================================================\n');
+      
+      return resultadoIA;
     } catch (error) {
-      console.error(`Erro ao consultar IA para cliente ${cenario.clienteId}:`, error);
+      console.error('\n❌ ERRO AO CONSULTAR IA:');
+      console.error(`❌ Cliente ID: ${cenario.clienteId}`);
+      console.error(`❌ Mensagem: ${error.message}`);
       
-      // Em caso de erro, retornar um resultado que indica necessidade de análise manual
+      if (error.response) {
+        console.error(`❌ Status: ${error.response.status}`);
+        console.error(`❌ Resposta: ${JSON.stringify(error.response.data || {}).substring(0, 200)}...`);
+      }
+      
+      console.log('⚠️ Retornando resultado padrão para análise manual por segurança');
+      console.log('===================================================================\n');
+      
+      // Em caso de erro, retornar resultado para análise manual
       return new ResultadoIA(
         false,
-        "Erro ao consultar sistema de IA. Recomendação para análise manual por segurança.",
+        "Erro ao consultar sistema de IA. Encaminhado para análise manual por segurança.",
         0.5,
-        true // Indica que precisa de análise manual
+        true // Análise manual
       );
     }
   }
@@ -60,10 +144,12 @@ class IAAdapter {
   prepararDadosParaIA(cenario) {
     // Usar o método toJsonForIA se disponível, ou construir manualmente
     if (typeof cenario.toJsonForIA === 'function') {
+      console.log('📦 Usando método toJsonForIA do cenário');
       return cenario.toJsonForIA();
     }
     
     // Fallback para o caso do método não estar disponível
+    console.log('📦 Método toJsonForIA não disponível, construindo manualmente');
     return {
       id: cenario.id,
       clienteId: cenario.clienteId,
@@ -77,8 +163,8 @@ class IAAdapter {
     };
   }
 
-  formatarMensagemIA(dadosParaIA) {
-    // Formatar o JSON para enviar à IA conforme especificação
+  async chamarAPIComFunctionCalling(dadosParaIA) {
+    // Formatar o JSON para enviar à IA
     const cenario = {
       id: dadosParaIA.id || "cen_" + Math.random().toString(36).substring(2, 15),
       clienteId: dadosParaIA.clienteId,
@@ -87,27 +173,45 @@ class IAAdapter {
       cliente: dadosParaIA.cliente,
       bureau: dadosParaIA.bureau,
       openBanking: dadosParaIA.openBanking,
-      resultadosAvaliacao: dadosParaIA.resultadosAnteriores || []
+      resultadosAvaliacao: dadosParaIA.resultadosAvaliacao || []
     };
     
-    // Instruction melhorada para a IA que enfatiza o formato de resposta esperado
-    return `SISTEMA: Você é um analisador de crédito que responde APENAS COM UM ÚNICO NÚMERO, sem explicações adicionais. Sua tarefa é analisar os dados do cliente e determinar se o crédito deve ser aprovado.
+    // Mensagem para a API com instrução de usar a função
+    const mensagemUser = `Analise este cenário de crédito e use a função creditDecision para determinar se o crédito deve ser aprovado, rejeitado ou enviado para análise manual:
 
-IMPORTANTE: Você DEVE retornar APENAS UM dos seguintes números:
-0 = Rejeitar crédito (80%+ de certeza)
-1 = Aprovar crédito (80%+ de certeza) 
-2 = Solicitar análise manual (incerteza)
-
-Sua resposta completa deve ser apenas o número: 0 ou 1 ou 2, sem nenhum texto adicional.
-
-Dados para análise:
 ${JSON.stringify(cenario, null, 2)}
 
-Responda apenas com o número 0, 1 ou 2. Qualquer outra resposta será considerada um erro.`;
-  }
+Considere que:
+1. Se o cliente tiver alto score (>700) e renda mensal suficiente para cobrir o crédito, geralmente é uma aprovação
+2. Se o comprometimento da renda (assumindo parcelas de 10% do valor total do crédito por mês) for maior que 30%, considere rejeitar
+3. Se houver dados conflitantes ou incompletos, envie para análise manual
+4. Se identificar padrões ou regras que poderiam ser úteis para análises futuras, sugira-as no campo suggestedRules
+5. Não responda com texto, APENAS chame a função`;
 
-  async chamarAPI(mensagem) {
+    console.log('📤 Enviando dados para IA...');
+    console.log(`📤 Tamanho da mensagem: ${mensagemUser.length} caracteres`);
+    
     try {
+      console.log('🔧 Tentando usar function calling...');
+      
+      const requestData = {
+        model: this.model,
+        messages: [
+          {
+            role: "user",
+            content: mensagemUser
+          }
+        ],
+        tools: this.tools,
+        tool_choice: { type: "auto" },
+        stream: false,
+        max_tokens: 1024
+      };
+      
+      console.log(`📤 URL: ${this.endpoint}`);
+      console.log(`📤 Model: ${this.model}`);
+      console.log('📤 Tools configuradas para function calling');
+      
       const response = await axios({
         method: 'post',
         url: this.endpoint,
@@ -115,42 +219,124 @@ Responda apenas com o número 0, 1 ou 2. Qualquer outra resposta será considera
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.accessKey}`
         },
-        data: {
-          messages: [
-            {
-              role: "system",
-              content: "Você é um analisador de crédito que responde APENAS COM UM ÚNICO NÚMERO (0, 1 ou 2) sem explicações adicionais. Lembre-se de sempre retornar apenas o número."
-            },
-            {
-              role: "user",
-              content: mensagem
-            }
-          ],
-          stream: false,
-          include_functions_info: false,
-          include_retrieval_info: false,
-          include_guardrails_info: false
-        },
+        data: requestData,
         timeout: this.timeout
       });
 
-
-      console.dir("======= Requisição IA ========");
-      console.dir("======= Requisição IA ========");
-      console.dir("======= Requisição IA ========");
-      console.dir(await response.data);
-      console.dir("======= FIM IA ========");
+      // Verificar se a resposta contém tool_calls
+      if (response.data.tool_calls && response.data.tool_calls.length > 0) {
+        console.log('✅ Function calling bem-sucedido!');
+        console.log(`🔧 Função chamada: ${response.data.tool_calls[0].function.name}`);
+      } else {
+        console.log('⚠️ Resposta recebida mas sem function calling');
+      }
 
       return response.data;
     } catch (error) {
-      console.error('Erro ao chamar a API de IA:', error.message);
-      throw new Error(`Erro ao consultar IA: ${error.message}`);
+      // Verificar se é um erro específico de function calling não suportado
+      if (error.response && error.response.status === 400 && 
+          error.response.data && error.response.data.error && 
+          error.response.data.error.message && 
+          error.response.data.error.message.includes('tools')) {
+        
+        console.warn('⚠️ Function calling não suportado, tentando fallback para formato JSON...');
+        return this.chamarAPIFallback(cenario);
+      }
+      
+      throw error;
     }
   }
+  
+  async chamarAPIFallback(cenario) {
+    // System prompt e user prompt para solicitar resposta em formato JSON
+    const systemPrompt = `Você é um analisador de crédito que responde APENAS em formato JSON. NUNCA explique seu raciocínio. NUNCA use texto fora do JSON.`;
+    
+    const userPrompt = `Analise os dados do cenário de crédito abaixo e retorne APENAS um objeto JSON com a seguinte estrutura:
+{
+  "decision": "APPROVE" ou "REJECT" ou "MANUAL_REVIEW",
+  "confidence": número entre 0 e 1,
+  "justification": "breve explicação"
+}
 
-  processarRespostaIA(resposta) {
+IMPORTANTE: 
+- Você DEVE retornar APENAS o objeto JSON acima, sem nenhum texto explicativo adicional.
+- Não inclua markdown, comentários ou qualquer outro texto.
+
+DADOS DO CENÁRIO:
+${JSON.stringify(cenario, null, 2)}
+
+LEMBRE-SE: Responda APENAS com o objeto JSON no formato especificado.`;
+
+    console.log('🔄 Utilizando método de fallback (JSON)...');
+    console.log(`📤 Tamanho da mensagem: ${userPrompt.length} caracteres`);
+    
+    const response = await axios({
+      method: 'post',
+      url: this.endpoint,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.accessKey}`
+      },
+      data: {
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: userPrompt
+          }
+        ],
+        stream: false,
+        max_tokens: 1024
+      },
+      timeout: this.timeout
+    });
+
+    console.log('✅ Resposta JSON recebida com sucesso');
+    
+    // Simular resposta no formato de function calling
+    return {
+      choices: [
+        {
+          message: {
+            content: response.data.choices[0].message.content
+          }
+        }
+      ]
+    };
+  }
+
+  async processarRespostaFunctionCalling(resposta, clienteId) {
     try {
-      // Extrair a resposta da IA do formato retornado
+      // Verificar se temos uma resposta de function calling
+      const toolCalls = resposta.tool_calls || [];
+      
+      if (toolCalls.length > 0 && toolCalls[0].function && toolCalls[0].function.name === 'creditDecision') {
+        console.log('🔍 Processando resultado do function calling');
+        // Extrair os argumentos da função
+        const args = JSON.parse(toolCalls[0].function.arguments);
+        console.log(`🔍 Argumentos recebidos: ${JSON.stringify(args)}`);
+        
+        // Verificar e persistir regras sugeridas, se houver
+        if (args.suggestedRules && Array.isArray(args.suggestedRules) && args.suggestedRules.length > 0) {
+          console.log(`💡 ${args.suggestedRules.length} regras sugeridas pela IA`);
+          await this.persistirRegrasGeradas(args.suggestedRules);
+        }
+        
+        // Converter para o formato ResultadoIA
+        return new ResultadoIA(
+          args.decision === 'APPROVE',
+          args.justification || `IA ${args.decision === 'APPROVE' ? 'aprovou' : (args.decision === 'REJECT' ? 'rejeitou' : 'encaminhou para análise manual')} o crédito`,
+          args.confidence || 0.8,
+          args.decision === 'MANUAL_REVIEW'
+        );
+      }
+      
+      // Não encontrou function calling, tentar extrair de formato JSON normal
+      console.log('🔍 Function calling não encontrado, tentando extrair JSON da resposta');
       const conteudoResposta = resposta.choices && resposta.choices[0] && resposta.choices[0].message
         ? resposta.choices[0].message.content
         : null;
@@ -159,69 +345,90 @@ Responda apenas com o número 0, 1 ou 2. Qualquer outra resposta será considera
         throw new Error('Resposta da IA não contém conteúdo válido');
       }
       
-      // Tentar extrair um número do conteúdo (mesmo se tiver texto)
-      const numerosEncontrados = conteudoResposta.match(/[0-2]/g);
-      let respostaNumero;
+      console.log(`🔍 Conteúdo da resposta (primeiros 100 caracteres): ${conteudoResposta.substring(0, 100)}...`);
       
-      if (numerosEncontrados && numerosEncontrados.length > 0) {
-        // Usar o primeiro número encontrado entre 0 e 2
-        respostaNumero = parseInt(numerosEncontrados[0]);
-      } else {
-        // Tentar usar toda a resposta como um número
-        respostaNumero = parseInt(conteudoResposta.trim());
+      // Tentar processar como JSON
+      try {
+        // Limpar o conteúdo para extrair apenas o JSON
+        let jsonString = conteudoResposta;
+        if (jsonString.includes('```json')) {
+          console.log('🔍 Detectado formato markdown com json');
+          jsonString = jsonString.split('```json')[1].split('```')[0].trim();
+        } else if (jsonString.includes('```')) {
+          console.log('🔍 Detectado formato markdown');
+          jsonString = jsonString.split('```')[1].split('```')[0].trim();
+        }
+        
+        console.log(`🔍 Tentando fazer parse do JSON: ${jsonString.substring(0, 100)}...`);
+        const resultadoJSON = JSON.parse(jsonString);
+        console.log(`✅ Parse de JSON bem-sucedido: ${JSON.stringify(resultadoJSON)}`);
+        
+        // Verificar se temos uma decisão válida
+        if (resultadoJSON.decision) {
+          console.log(`🔍 Encontrada decisão: ${resultadoJSON.decision}`);
+          return new ResultadoIA(
+            resultadoJSON.decision === 'APPROVE',
+            resultadoJSON.justification || `IA ${resultadoJSON.decision === 'APPROVE' ? 'aprovou' : (resultadoJSON.decision === 'REJECT' ? 'rejeitou' : 'encaminhou para análise manual')} o crédito`,
+            resultadoJSON.confidence || 0.8,
+            resultadoJSON.decision === 'MANUAL_REVIEW'
+          );
+        }
+        
+        // Se não encontrou decision mas encontrou code (formato antigo)
+        if (resultadoJSON.code !== undefined) {
+          console.log(`🔍 Encontrado código (formato antigo): ${resultadoJSON.code}`);
+          const codeMap = {
+            0: { approved: false, justification: "IA rejeitou o crédito com alta confiança" },
+            1: { approved: true, justification: "IA aprovou o crédito com alta confiança" },
+            2: { approved: false, justification: "IA solicitou análise manual para o crédito", analiseManual: true }
+          };
+          
+          const resultado = codeMap[resultadoJSON.code] || { approved: false, justification: "Resposta da IA não reconhecida", analiseManual: true };
+          
+          return new ResultadoIA(
+            resultado.approved,
+            resultado.justification,
+            resultadoJSON.confidence || 0.8,
+            resultado.analiseManual || false
+          );
+        }
+      } catch (jsonError) {
+        console.error(`⚠️ Erro ao processar JSON da resposta para cliente ${clienteId}:`, jsonError.message);
       }
       
-      // Verificar se é um número válido (0, 1 ou 2)
-      if (isNaN(respostaNumero) || ![0, 1, 2].includes(respostaNumero)) {
-        console.error('Resposta da IA não contém um número válido:', conteudoResposta);
-        // Fallback para análise manual em caso de resposta inválida
-        return {
-          aprovado: false,
-          justificativa: `Resposta da IA não processável: "${conteudoResposta.substring(0, 50)}..."`,
-          confianca: 0.5,
-          analiseManual: true
-        };
+      // Se chegou aqui, usar último recurso: buscar por palavras-chave
+      console.log('🔍 Utilizando análise de texto como último recurso');
+      const conteudoLower = conteudoResposta.toLowerCase();
+      
+      if (conteudoLower.includes('aprovado') || conteudoLower.includes('aprove') || conteudoLower.includes('approve')) {
+        console.log('🔍 Texto sugere APROVAÇÃO');
+        return new ResultadoIA(true, "Crédito aprovado pela IA", 0.7, false);
+      } else if (conteudoLower.includes('rejeitado') || conteudoLower.includes('rejeite') || conteudoLower.includes('reject')) {
+        console.log('🔍 Texto sugere REJEIÇÃO');
+        return new ResultadoIA(false, "Crédito rejeitado pela IA", 0.7, false);
+      } else if (conteudoLower.includes('manual') || conteudoLower.includes('análise') || conteudoLower.includes('review')) {
+        console.log('🔍 Texto sugere ANÁLISE MANUAL');
+        return new ResultadoIA(false, "IA solicitou análise manual", 0.7, true);
       }
       
-      // Converter para o formato esperado pela aplicação
-      let resultado = {
-        aprovado: false,
-        justificativa: "",
-        confianca: 0.8, // Valor padrão para confiança (80%)
-        analiseManual: false
-      };
-      
-      // Interpretar o código de resposta
-      switch (respostaNumero) {
-        case 0: // Rejeição com alta confiança
-          resultado.aprovado = false;
-          resultado.justificativa = "IA rejeitou o crédito com alta confiança";
-          resultado.confianca = 0.8;
-          break;
-        case 1: // Aprovação com alta confiança
-          resultado.aprovado = true;
-          resultado.justificativa = "IA aprovou o crédito com alta confiança";
-          resultado.confianca = 0.8;
-          break;
-        case 2: // Necessidade de análise manual
-          resultado.aprovado = false;
-          resultado.justificativa = "IA solicitou análise manual para o crédito";
-          resultado.confianca = 0.5;
-          resultado.analiseManual = true;
-          break;
-      }
-      
-      return resultado;
+      // Default: encaminhar para análise manual
+      console.log('⚠️ Não foi possível determinar a decisão a partir do texto');
+      return new ResultadoIA(
+        false,
+        "Resposta da IA não pôde ser interpretada. Encaminhado para análise manual por segurança.",
+        0.5,
+        true
+      );
     } catch (error) {
-      console.error('Erro ao processar resposta da IA:', error);
+      console.error(`❌ Erro ao processar resposta da IA para cliente ${clienteId}:`, error.message);
       
-      // Em caso de erro no processamento, retornar um resultado que indica necessidade de análise manual
-      return {
-        aprovado: false,
-        justificativa: "Erro ao interpretar resposta da IA. Recomendação para análise manual.",
-        confianca: 0.5,
-        analiseManual: true
-      };
+      // Em caso de erro no processamento, retornar para análise manual
+      return new ResultadoIA(
+        false,
+        "Erro ao interpretar resposta da IA. Encaminhado para análise manual por segurança.",
+        0.5,
+        true
+      );
     }
   }
 
@@ -235,114 +442,43 @@ Responda apenas com o número 0, 1 ou 2. Qualquer outra resposta será considera
         return; // Não há regras para persistir
       }
       
+      console.log('🔄 Persistindo regras sugeridas pela IA...');
+      
       // Obter todas as regras existentes
       const regrasExistentes = await this.regraDinamicaDAO.listar();
+      console.log(`📋 Existem ${regrasExistentes.length} regras no banco de dados`);
       
       for (const regra of regras) {
+        const nomeRegra = regra.name || regra.nome;
+        
         // Verificar se a regra já existe com o mesmo nome
-        const regraExistente = regrasExistentes.find(r => r.nome === regra.nome);
+        const regraExistente = regrasExistentes.find(r => r.nome === nomeRegra);
         
         if (regraExistente) {
-          console.log(`Regra ${regra.nome} já existe, pulando inserção.`);
+          console.log(`⚠️ Regra ${nomeRegra} já existe, pulando inserção`);
           continue;
         }
         
-        // Verificar se existe uma regra similar (mesmo tipo e parâmetros similares)
-        const regraSimilar = this.encontrarRegraSimilar(regra, regrasExistentes);
-        
-        if (regraSimilar) {
-          console.log(`Regra similar já existe (${regraSimilar.nome}), pulando inserção.`);
-          continue;
-        }
+        console.log(`✅ Inserindo nova regra: ${nomeRegra}`);
         
         // Inserir nova regra
         await this.regraDinamicaDAO.inserir({
-          nome: regra.nome,
-          descricao: regra.descricao,
-          tipo: regra.tipo,
-          parametros: regra.parametros,
+          nome: nomeRegra,
+          descricao: regra.description || regra.descricao,
+          tipo: regra.type || regra.tipo,
+          parametros: regra.parameters || regra.parametros,
           aprovada: false, // Regras geradas pela IA nunca começam aprovadas
           origem: 'IA',
           ativa: true
         });
         
-        console.log(`Nova regra dinâmica criada pela IA: ${regra.nome}`);
+        console.log(`✅ Nova regra dinâmica criada pela IA: ${nomeRegra}`);
       }
-    } catch (error) {
-      console.error('Erro ao persistir regras geradas pela IA:', error);
-    }
-  }
-  
-  /**
-   * Verifica se já existe uma regra similar à nova regra
-   * @param {Object} novaRegra - Regra a ser verificada
-   * @param {Array} regrasExistentes - Lista de regras existentes
-   * @returns {Object|null} Regra similar ou null se não existir
-   */
-  encontrarRegraSimilar(novaRegra, regrasExistentes) {
-    // Filtra por regras do mesmo tipo
-    const regrasDoMesmoTipo = regrasExistentes.filter(r => r.tipo === novaRegra.tipo);
-    
-    if (!regrasDoMesmoTipo.length) {
-      return null;
-    }
-    
-    // Compara os parâmetros para verificar similaridade
-    for (const regra of regrasDoMesmoTipo) {
-      const parametrosExistente = regra.parametros;
-      const parametrosNova = novaRegra.parametros;
       
-      // Verificar similaridade com base no tipo da regra
-      switch (novaRegra.tipo) {
-        case 'COMPROMETIMENTO_RENDA':
-          // Verifica se o percentual máximo é igual ou similar (dentro de 5%)
-          if (parametrosExistente.percentualMaximo && parametrosNova.percentualMaximo) {
-            const diff = Math.abs(parametrosExistente.percentualMaximo - parametrosNova.percentualMaximo);
-            if (diff <= 5) { // Diferença de até 5% é considerada similar
-              return regra;
-            }
-          }
-          break;
-          
-        case 'VALOR_MAXIMO':
-          // Verifica se o valor máximo é igual ou similar (dentro de 10%)
-          if (parametrosExistente.valorMaximo && parametrosNova.valorMaximo) {
-            const diff = Math.abs(parametrosExistente.valorMaximo - parametrosNova.valorMaximo);
-            const percentDiff = diff / parametrosExistente.valorMaximo * 100;
-            if (percentDiff <= 10) { // Diferença de até 10% é considerada similar
-              return regra;
-            }
-          }
-          break;
-          
-        case 'SCORE_CONDICIONAL':
-          // Verifica se o score mínimo e a condição são iguais ou similares
-          if (parametrosExistente.scoreMinimo && parametrosNova.scoreMinimo &&
-              parametrosExistente.condicao === parametrosNova.condicao) {
-            const diff = Math.abs(parametrosExistente.scoreMinimo - parametrosNova.scoreMinimo);
-            if (diff <= 50) { // Diferença de até 50 pontos é considerada similar
-              return regra;
-            }
-          }
-          break;
-          
-        case 'PRAZO_MINIMO':
-          // Verifica se o valor mínimo e o prazo mínimo são iguais ou similares
-          if (parametrosExistente.valorMinimo && parametrosNova.valorMinimo &&
-              parametrosExistente.prazoMinimo && parametrosNova.prazoMinimo) {
-            const diffValor = Math.abs(parametrosExistente.valorMinimo - parametrosNova.valorMinimo);
-            const percentDiffValor = diffValor / parametrosExistente.valorMinimo * 100;
-            const diffPrazo = Math.abs(parametrosExistente.prazoMinimo - parametrosNova.prazoMinimo);
-            
-            if (percentDiffValor <= 10 && diffPrazo <= 6) { // Diferença de até 10% no valor e 6 meses no prazo
-              return regra;
-            }
-          }
-          break;
-      }
+      console.log('✅ Persistência de regras concluída');
+    } catch (error) {
+      console.error('❌ Erro ao persistir regras geradas pela IA:', error.message);
     }
-    
-    return null;
   }
 }
 

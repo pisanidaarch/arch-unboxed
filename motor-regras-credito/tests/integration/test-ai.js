@@ -3,8 +3,8 @@ require('dotenv').config();
 const axios = require('axios');
 
 async function testIA() {
-  console.log('Testando integração com a IA...');
-  console.log('==========================');
+  console.log('Testando integração com a IA (versão melhorada)...');
+  console.log('==============================================');
   
   try {
     // Configuração do endpoint da IA
@@ -59,21 +59,30 @@ async function testIA() {
       ]
     };
     
-    console.log('Enviando dados para análise da IA...');
+    // Formatar mensagem para forçar uma resposta em formato JSON
+    const systemPrompt = `Você é um analisador de crédito que responde APENAS em formato JSON. NUNCA explique seu raciocínio. NUNCA use texto fora do JSON.`;
     
-    // Formatar a mensagem para a API de IA
-    const mensagem = `O usuário irá informar um json com informações do cenário de crédito como o exemplo abaixo: 
+    const userPrompt = `Analise os dados do cenário de crédito abaixo e retorne APENAS um objeto JSON com a seguinte estrutura:
+{
+  "code": 0 OU 1 OU 2, // 0=Rejeitar, 1=Aprovar, 2=Análise Manual
+  "confidence": número entre 0 e 1 // sua confiança na decisão
+}
+
+IMPORTANTE: 
+- Você DEVE retornar APENAS o objeto JSON acima, sem nenhum texto explicativo adicional.
+- Não inclua markdown, comentários ou qualquer outro texto.
+- Use code=0 para rejeitar crédito com pelo menos 80% de certeza
+- Use code=1 para aprovar crédito com pelo menos 80% de certeza
+- Use code=2 para solicitar análise manual em casos de incerteza
+
+DADOS DO CENÁRIO:
 ${JSON.stringify(cenarioTeste, null, 2)}
 
-A sua missão será determinar se devemos ou não aprovar o crédito solicitado pelo usuário no json ("valorCredito") com base nas informações históricas. Você deve retornar somente os números 0,1 ou 2 sendo:
-0: Se for no minimo 80% de certeza de que você não deveria aprovar;
-1: Se for no mínimo 80% de certeza de que você deveria aprovar;
-2: Para todos os demais cenários, devido a necessitar de aprovação manual.
-IMPORTANT: you must return only the number: 0 or 1 or 2;`;
+LEMBRE-SE: Responda APENAS com o objeto JSON no formato especificado.`;
 
     const startTime = Date.now();
     
-    // Chamar a API de IA
+    // Chamar a API de IA com solicitação de output em JSON
     console.log('Chamando a API de IA...');
     const response = await axios({
       method: 'post',
@@ -85,8 +94,12 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
       data: {
         messages: [
           {
+            role: "system",
+            content: systemPrompt
+          },
+          {
             role: "user",
-            content: mensagem
+            content: userPrompt
           }
         ],
         stream: false,
@@ -101,10 +114,7 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
     console.log(`Resposta recebida em ${(endTime - startTime)/1000} segundos`);
     
     // Extrair resposta da IA
-    const conteudoResposta = response.data.choices && 
-                            response.data.choices[0] && 
-                            response.data.choices[0].message ? 
-                            response.data.choices[0].message.content : null;
+    const conteudoResposta = response.data.choices?.[0]?.message?.content;
     
     if (!conteudoResposta) {
       throw new Error('Resposta da IA não contém conteúdo válido');
@@ -113,31 +123,75 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
     console.log('\nResposta bruta da IA:');
     console.log(conteudoResposta);
     
-    // Interpretar a resposta (0, 1 ou 2)
-    const respostaLimpa = conteudoResposta.trim();
-    const respostaNumero = parseInt(respostaLimpa);
-    
-    if (isNaN(respostaNumero)) {
-      console.log('AVISO: A resposta não é um número válido!');
-    } else {
-      console.log('\nCódigo de resposta interpretado:', respostaNumero);
+    // Tentar extrair o JSON da resposta
+    try {
+      // Remover possíveis formatações extras (código, markdown, etc)
+      let jsonString = conteudoResposta;
+      if (jsonString.includes('```json')) {
+        jsonString = jsonString.split('```json')[1].split('```')[0].trim();
+      } else if (jsonString.includes('```')) {
+        jsonString = jsonString.split('```')[1].split('```')[0].trim();
+      }
       
-      switch (respostaNumero) {
-        case 0:
-          console.log('Interpretação: Crédito REJEITADO com alta confiança');
-          break;
-        case 1:
-          console.log('Interpretação: Crédito APROVADO com alta confiança');
-          break;
-        case 2:
-          console.log('Interpretação: Crédito encaminhado para ANÁLISE MANUAL');
-          break;
-        default:
-          console.log('Interpretação: Código desconhecido!');
+      const resultadoJSON = JSON.parse(jsonString);
+      console.log('\nJSON extraído com sucesso:');
+      console.log(JSON.stringify(resultadoJSON, null, 2));
+      
+      if (resultadoJSON.code !== undefined) {
+        console.log('\nCódigo de resposta interpretado:', resultadoJSON.code);
+        
+        switch (resultadoJSON.code) {
+          case 0:
+            console.log('Interpretação: Crédito REJEITADO com alta confiança');
+            break;
+          case 1:
+            console.log('Interpretação: Crédito APROVADO com alta confiança');
+            break;
+          case 2:
+            console.log('Interpretação: Crédito encaminhado para ANÁLISE MANUAL');
+            break;
+          default:
+            console.log('Interpretação: Código desconhecido!');
+        }
+        
+        if (resultadoJSON.confidence !== undefined) {
+          console.log(`Confiança: ${resultadoJSON.confidence * 100}%`);
+        }
+      } else {
+        console.error('JSON não contém o campo "code" esperado');
+      }
+    } catch (jsonError) {
+      console.error('\nErro ao extrair JSON da resposta:', jsonError.message);
+      console.log('Tentando extrair número diretamente...');
+      
+      // Fallback: tentar extrair um número do conteúdo (mesmo se tiver texto)
+      const numerosEncontrados = conteudoResposta.match(/[0-2]/g);
+      let respostaNumero;
+      
+      if (numerosEncontrados && numerosEncontrados.length > 0) {
+        // Usar o primeiro número encontrado entre 0 e 2
+        respostaNumero = parseInt(numerosEncontrados[0]);
+        console.log('\nNúmero extraído da resposta:', respostaNumero);
+        
+        switch (respostaNumero) {
+          case 0:
+            console.log('Interpretação: Crédito REJEITADO com alta confiança');
+            break;
+          case 1:
+            console.log('Interpretação: Crédito APROVADO com alta confiança');
+            break;
+          case 2:
+            console.log('Interpretação: Crédito encaminhado para ANÁLISE MANUAL');
+            break;
+          default:
+            console.log('Interpretação: Código desconhecido!');
+        }
+      } else {
+        console.error('Não foi possível extrair um número válido da resposta');
       }
     }
     
-    console.log('\nTeste de integração com IA concluído com sucesso!');
+    console.log('\nTeste de integração com IA concluído!');
   } catch (error) {
     console.error('\nErro durante o teste de integração com IA:');
     if (error.response) {
