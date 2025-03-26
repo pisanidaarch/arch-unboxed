@@ -1,9 +1,11 @@
 // src/core/chain/handlers/RequisicaoIAHandler.js
 const { restaurarMetodosCenario } = require('../../../utils/CenarioHelper');
+const LogService = require('../../../service/LogService');
 
 class RequisicaoIAHandler {
   constructor(iaAdapter) {
     this.iaAdapter = iaAdapter;
+    this.logService = new LogService();
   }
 
   async processar(cenario) {
@@ -25,42 +27,44 @@ class RequisicaoIAHandler {
     }
 
     try {
+      this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, true);
+      console.log(`Consultando IA para o cliente ${cenarioProcessado.clienteId} - Valor: ${cenarioProcessado.valorCredito}`);
+      
       const resultadoIA = await this.iaAdapter.avaliarCredito(cenarioProcessado);
       cenarioProcessado.resultadoIA = resultadoIA;
 
-      // Verificar o nível de confiança da IA
-      const confiancaMinima = 0.7; // Confiança mínima para decisão automática
-
-      if (resultadoIA.confianca < confiancaMinima) {
-        // Confiança baixa, precisa análise manual
+      // Processar o resultado com base no código retornado pela IA (0, 1 ou 2)
+      if (resultadoIA.analiseManual) {
+        // Caso 2: Análise manual
         cenarioProcessado.precisaAnaliseManual = true;
-        cenarioProcessado.motivoAnaliseManual = 'IA com baixa confiança na avaliação';
+        cenarioProcessado.motivoAnaliseManual = resultadoIA.justificativa || 'IA solicitou análise humana';
         
         cenarioProcessado.adicionarResultadoAvaliacao(
-          "IA_BAIXA_CONFIANCA",
+          "IA_SOLICITA_ANALISE",
           false,
-          `IA não tem confiança suficiente (${(resultadoIA.confianca * 100).toFixed(1)}%)`
+          resultadoIA.justificativa || "A IA solicitou análise humana para este caso"
         );
         
         return cenarioProcessado;
-      }
-
-      if (resultadoIA.aprovado) {
+      } else if (resultadoIA.aprovado) {
+        // Caso 1: Aprovação
         cenarioProcessado.adicionarResultadoAvaliacao(
           "IA",
           true,
-          resultadoIA.justificativa
+          resultadoIA.justificativa || "IA aprovou o crédito com alta confiança"
         );
       } else {
+        // Caso 0: Reprovação
         cenarioProcessado.adicionarResultadoAvaliacao(
           "IA",
           false,
-          resultadoIA.justificativa
+          resultadoIA.justificativa || "IA rejeitou o crédito com alta confiança"
         );
         cenarioProcessado.regraFalhou = true;
       }
     } catch (error) {
       console.error('[RequisicaoIAHandler] Erro ao consultar IA:', error);
+      this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, false);
       
       // Em caso de erro na IA, enviar para análise manual por segurança
       cenarioProcessado.precisaAnaliseManual = true;

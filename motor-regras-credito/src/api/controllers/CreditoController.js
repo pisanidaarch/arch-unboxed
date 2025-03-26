@@ -54,7 +54,7 @@ class CreditoController {
             .map(r => r.descricao);
         } else if (cenario.status === 'ANALISE_MANUAL') {
           // Incluir informações sobre a análise manual
-          resposta.dadosAdicionais.motivoAnaliseManual = 'Necessária aprovação humana para regras dinâmicas';
+          resposta.dadosAdicionais.motivoAnaliseManual = cenario.motivoAnaliseManual || 'Necessária aprovação humana para regras dinâmicas';
           resposta.dadosAdicionais.estimativaTempo = '24 horas úteis';
         }
   
@@ -78,7 +78,11 @@ class CreditoController {
           return res.status(404).json({ mensagem: `Cenário não encontrado: ${id}` });
         }
 
-        return res.status(200).json({
+        // Obter dados completos do cliente
+        const cliente = await this.clienteDAO.buscarPorId(cenario.clienteId);
+        
+        // Formatar resposta com dados detalhados
+        const resposta = {
           id: cenario.id,
           clienteId: cenario.clienteId,
           valorCredito: cenario.valorCredito,
@@ -87,10 +91,33 @@ class CreditoController {
           resultadosAvaliacao: cenario.resultadosAvaliacao.map(r => ({
             regra: r.regra,
             resultado: r.resultado,
-            descricao: r.descricao
+            descricao: r.descricao,
+            dataAvaliacao: r.dataAvaliacao
           })),
-          resultadoIA: cenario.resultadoIA
-        });
+          resultadoIA: cenario.resultadoIA,
+          motivoAnaliseManual: cenario.motivoAnaliseManual,
+          // Adicionar dados do cliente quando disponíveis
+          cliente: cliente ? {
+            nome: cliente.nome,
+            idade: cliente.idade,
+            sexo: cliente.sexo,
+            rendaMensal: cliente.renda_mensal,
+            email: cliente.email,
+            telefone: cliente.telefone,
+            endereco: cliente.endereco,
+            cidade: cliente.cidade,
+            estado: cliente.estado,
+            cep: cliente.cep,
+            cpf: cliente.cpf
+          } : null,
+          // Incluir dados coletados durante o processamento
+          dadosColetados: {
+            bureau: cenario.getDadosPorTipo ? cenario.getDadosPorTipo("BUREAU_CREDITO") : {},
+            openBanking: cenario.getDadosPorTipo ? cenario.getDadosPorTipo("OPEN_BANKING") : {}
+          }
+        };
+
+        return res.status(200).json(resposta);
       } catch (error) {
         next(error);
       }

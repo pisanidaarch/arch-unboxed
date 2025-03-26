@@ -55,4 +55,4 @@ class RegraFactory {
   }
 }
 
-module.exports = RegraFactory;
+module.exports = { RegraFactory };

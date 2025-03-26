@@ -1,5 +1,4 @@
 // src/index.js
-
 require('dotenv').config(); // Carrega as variáveis de ambiente
 const express = require('express');
 const helmet = require('helmet');
@@ -43,7 +42,8 @@ const logService = new LogService();
 
 // Verificar variáveis de ambiente
 console.log('Ambiente:', process.env.NODE_ENV);
-console.log('Endpoint IA configurado:', process.env.IA_ENDPOINT ? 'Sim' : 'Não');
+console.log('Endpoint IA configurado:', process.env.IA_ENDPOINT);
+console.log('Access Key IA configurada:', process.env.IA_ACCESS_KEY ? 'Sim (valor presente)' : 'Não');
 
 // Inicialização dos adaptadores com mocks
 const bureauCreditoAdapter = new BureauCreditoAdapter();

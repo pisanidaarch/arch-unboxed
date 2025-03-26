@@ -90,15 +90,20 @@ class IAAdapter {
       resultadosAvaliacao: dadosParaIA.resultadosAnteriores || []
     };
     
-    // Instruction para a IA conforme solicitado
-    return `O usuário irá informar um json com informações do cenário de crédito como o exemplo abaixo: 
+    // Instruction melhorada para a IA que enfatiza o formato de resposta esperado
+    return `SISTEMA: Você é um analisador de crédito que responde APENAS COM UM ÚNICO NÚMERO, sem explicações adicionais. Sua tarefa é analisar os dados do cliente e determinar se o crédito deve ser aprovado.
+
+IMPORTANTE: Você DEVE retornar APENAS UM dos seguintes números:
+0 = Rejeitar crédito (80%+ de certeza)
+1 = Aprovar crédito (80%+ de certeza) 
+2 = Solicitar análise manual (incerteza)
+
+Sua resposta completa deve ser apenas o número: 0 ou 1 ou 2, sem nenhum texto adicional.
+
+Dados para análise:
 ${JSON.stringify(cenario, null, 2)}
 
-A sua missão será determinar se devemos ou não aprovar o crédito solicitado pelo usuário no json ("valorCredito") com base nas informações históricas. Você deve retornar somente os números 0,1 ou 2 sendo:
-0: Se for no minimo 80% de certeza de que você não deveria aprovar;
-1: Se for no mínimo 80% de certeza de que você deveria aprovar;
-2: Para todos os demais cenários, devido a necessitar de aprovação manual.
-IMPORTANT: you must return only the number: 0 or 1 or 2;`;
+Responda apenas com o número 0, 1 ou 2. Qualquer outra resposta será considerada um erro.`;
   }
 
   async chamarAPI(mensagem) {
@@ -113,6 +118,10 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
         data: {
           messages: [
             {
+              role: "system",
+              content: "Você é um analisador de crédito que responde APENAS COM UM ÚNICO NÚMERO (0, 1 ou 2) sem explicações adicionais. Lembre-se de sempre retornar apenas o número."
+            },
+            {
               role: "user",
               content: mensagem
             }
@@ -124,6 +133,13 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
         },
         timeout: this.timeout
       });
+
+
+      console.dir("======= Requisição IA ========");
+      console.dir("======= Requisição IA ========");
+      console.dir("======= Requisição IA ========");
+      console.dir(await response.data);
+      console.dir("======= FIM IA ========");
 
       return response.data;
     } catch (error) {
@@ -143,14 +159,28 @@ IMPORTANT: you must return only the number: 0 or 1 or 2;`;
         throw new Error('Resposta da IA não contém conteúdo válido');
       }
       
-      // Limpar a resposta e extrair apenas o número
-      const respLimpa = conteudoResposta.trim();
-      const respostaNumero = parseInt(respLimpa);
+      // Tentar extrair um número do conteúdo (mesmo se tiver texto)
+      const numerosEncontrados = conteudoResposta.match(/[0-2]/g);
+      let respostaNumero;
+      
+      if (numerosEncontrados && numerosEncontrados.length > 0) {
+        // Usar o primeiro número encontrado entre 0 e 2
+        respostaNumero = parseInt(numerosEncontrados[0]);
+      } else {
+        // Tentar usar toda a resposta como um número
+        respostaNumero = parseInt(conteudoResposta.trim());
+      }
       
       // Verificar se é um número válido (0, 1 ou 2)
       if (isNaN(respostaNumero) || ![0, 1, 2].includes(respostaNumero)) {
-        console.error('Resposta da IA não contém um número válido:', respLimpa);
-        throw new Error(`Resposta da IA não é 0, 1 ou 2: ${respLimpa}`);
+        console.error('Resposta da IA não contém um número válido:', conteudoResposta);
+        // Fallback para análise manual em caso de resposta inválida
+        return {
+          aprovado: false,
+          justificativa: `Resposta da IA não processável: "${conteudoResposta.substring(0, 50)}..."`,
+          confianca: 0.5,
+          analiseManual: true
+        };
       }
       
       // Converter para o formato esperado pela aplicação

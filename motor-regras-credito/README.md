@@ -1,6 +1,6 @@
 # Motor de Regras de Aprovação de Crédito
 
-Motor responsável por processar solicitações de crédito, aplicando regras predefinidas e dinâmicas para determinar se uma solicitação deve ser aprovada, reprovada ou encaminhada para análise manual.
+Motor responsável por processar solicitações de crédito, aplicando regras predefinidas e dinâmicas para determinar se uma solicitação deve ser aprovada, reprovada ou encaminhada para análise manual. Integra-se com sistema de IA para análise avançada de crédito.
 
 ## Requisitos
 
@@ -10,7 +10,7 @@ Motor responsável por processar solicitações de crédito, aplicando regras pr
 
 ## Configuração
 
-O projeto já está configurado para usar um banco de dados PostgreSQL no DigitalOcean. As credenciais estão no arquivo `.env`.
+O projeto já está configurado para usar um banco de dados PostgreSQL no DigitalOcean e uma API de IA no DigitalOcean. As credenciais estão no arquivo `.env`.
 
 Para configurar o projeto localmente:
 
@@ -68,6 +68,11 @@ curl -X POST http://localhost:3000/api/credito/analisar \
   }'
 ```
 
+4. Testar a integração com a IA:
+```bash
+node tests/integration/test-ia.js
+```
+
 ## Estrutura do projeto
 
 O motor segue uma arquitetura em camadas:
@@ -75,7 +80,7 @@ O motor segue uma arquitetura em camadas:
 - **Camada Service**: Contém o Motor (Façade) como ponto de entrada
 - **Camada Core**: Contém a lógica de avaliação e o Gerenciador de Cenário
 - **Camada Entity**: Contém a definição do objeto Cenário
-- **Camada Adapter**: Contém adaptadores para sistemas externos
+- **Camada Adapter**: Contém adaptadores para sistemas externos (incluindo IA)
 - **Camada API**: Contém controladores e rotas da API
 
 ## Arquitetura
@@ -87,6 +92,19 @@ O motor usa vários padrões de design:
 - **Specification**: Para regras mandatórias
 - **Strategy**: Para regras dinâmicas
 - **Adapter**: Para integração com sistemas externos
+
+## Integração com IA
+
+O motor utiliza uma API de IA oferecida pelo DigitalOcean para análise avançada de crédito. A integração é configurada através das variáveis de ambiente:
+
+- `IA_ENDPOINT`: URL do endpoint da API de IA
+- `IA_ACCESS_KEY`: Chave de acesso para autenticação
+
+A IA é consultada após a verificação das regras mandatórias e dinâmicas, e pode:
+
+1. Aprovar ou reprovar o crédito com base em sua análise
+2. Solicitar análise manual quando detectar casos complexos
+3. Sugerir novas regras dinâmicas baseadas em padrões identificados
 
 ## Banco de Dados
 
@@ -105,50 +123,19 @@ npm run test:watch
 npm run test:coverage
 ```
 
+## Gerenciamento de Regras Dinâmicas
 
-# Dependências
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
+O sistema possui uma API para gerenciar regras dinâmicas que podem ser acessadas via:
 
-# Ambiente
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+```bash
+# Listar todas as regras
+curl http://localhost:3000/api/regras-dinamicas
 
-# Não ignoramos o .env principal pois contém configurações necessárias para o Digital Ocean
-# .env
+# Detalhar uma regra
+curl http://localhost:3000/api/regras-dinamicas/1
 
-# Testes
-/coverage
-/.nyc_output
-
-# Logs
-logs
-*.log
-
-# Diretórios de build
-/build
-/dist
-
-# Arquivos temporários
-.tmp
-.temp
-.cache
-
-# Arquivos do sistema
-.DS_Store
-Thumbs.db
-
-# Arquivos de IDE/editores
-/.idea
-/.vscode
-*.sublime-project
-*.sublime-workspace
-
-# Docker
-.dockerignore
+# Aprovar uma regra
+curl -X PUT http://localhost:3000/api/regras-dinamicas/1/aprovacao \
+  -H "Content-Type: application/json" \
+  -d '{"aprovada": true}'
+```
