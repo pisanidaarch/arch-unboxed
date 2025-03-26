@@ -3,6 +3,9 @@
 /**
  * Middleware para validar solicitações de análise de crédito
  */
+/**
+ * Middleware para validar solicitações de análise de crédito
+ */
 function validarSolicitacaoCredito(req, res, next) {
   const { clienteId, valorCredito } = req.body;
   
@@ -47,50 +50,44 @@ function validarIdParam(paramName) {
   };
 }
 
+
 /**
- * Middleware para validar uma requisição de regra dinâmica
+ * Middleware para limitar requisições por IP
  */
-function validarRegraDinamica(req, res, next) {
-  const { nome, descricao, tipo, parametros } = req.body;
-  const errors = [];
+function rateLimiter(windowMs = 60000, maxRequests = 100) {
+  const requests = new Map();
   
-  if (!nome) {
-    errors.push('Nome da regra é obrigatório');
-  }
-  
-  if (!descricao) {
-    errors.push('Descrição da regra é obrigatória');
-  }
-  
-  if (!tipo) {
-    errors.push('Tipo da regra é obrigatório');
-  } else {
-    const tiposValidos = ['COMPROMETIMENTO_RENDA', 'VALOR_MAXIMO', 'SCORE_CONDICIONAL', 'PRAZO_MINIMO'];
-    if (!tiposValidos.includes(tipo)) {
-      errors.push(`Tipo de regra inválido. Tipos válidos: ${tiposValidos.join(', ')}`);
-    }
-  }
-  
-  if (!parametros) {
-    errors.push('Parâmetros da regra são obrigatórios');
-  } else {
-    // Validações específicas por tipo
-    if (tipo === 'COMPROMETIMENTO_RENDA' && (!parametros.percentualMaximo || isNaN(parametros.percentualMaximo))) {
-      errors.push('Parâmetro percentualMaximo é obrigatório e deve ser um número para regras COMPROMETIMENTO_RENDA');
-    }
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
     
-    if (tipo === 'VALOR_MAXIMO' && (!parametros.valorMaximo || isNaN(parametros.valorMaximo))) {
-      errors.push('Parâmetro valorMaximo é obrigatório e deve ser um número para regras VALOR_MAXIMO');
-    }
-    
-    if (tipo === 'SCORE_CONDICIONAL') {
-      if (!parametros.scoreMinimo || isNaN(parametros.scoreMinimo)) {
-        errors.push('Parâmetro scoreMinimo é obrigatório e deve ser um número para regras SCORE_CONDICIONAL');
+    // Limpa entradas antigas
+    if (requests.has(ip)) {
+      const userRequests = requests.get(ip);
+      const validRequests = userRequests.filter(timestamp => timestamp > now - windowMs);
+      requests.set(ip, validRequests);
+      
+      if (validRequests.length >= maxRequests) {
+        return res.status(429).json({
+          status: 'erro',
+          mensagem: 'Limite de requisições excedido. Tente novamente mais tarde.'
+        });
       }
-      if (!parametros.condicao) {
-        errors.push('Parâmetro condicao é obrigatório para regras SCORE_CONDICIONAL');
-      }
+      
+      // Adiciona nova requisição
+      validRequests.push(now);
+      requests.set(ip, validRequests);
+    } else {
+      // Primeira requisição deste IP
+      requests.set(ip, [now]);
     }
     
-    if (tipo === 'PRAZO_MINIMO') {
-      if (!parametros.valorMinimo || isNaN(parametros.
+    next();
+  };
+}
+
+module.exports = {
+  validarSolicitacaoCredito,
+  validarIdParam,
+  rateLimiter
+};
