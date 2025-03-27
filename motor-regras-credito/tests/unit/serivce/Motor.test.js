@@ -7,9 +7,22 @@ describe('Motor', () => {
   const mockCenario = new Cenario();
   mockCenario.clienteId = '12345';
   mockCenario.valorCredito = 5000;
+  // Adicionar método salvar mock
+  mockCenario.salvar = jest.fn().mockResolvedValue(mockCenario);
 
-  const mockCenarioProcessado = { ...mockCenario, regraFalhou: false };
-  const mockCenarioFinal = { ...mockCenarioProcessado, status: 'APROVADO' };
+  const mockCenarioProcessado = { 
+    ...mockCenario, 
+    regraFalhou: false,
+    // Garantir que o método salvar existe no cenário processado
+    salvar: jest.fn().mockResolvedValue(mockCenario)
+  };
+  
+  const mockCenarioFinal = { 
+    ...mockCenarioProcessado, 
+    status: 'APROVADO',
+    // Garantir que o método salvar existe no cenário final
+    salvar: jest.fn().mockResolvedValue(mockCenario)
+  };
 
   // Mock do gerenciador de cenário
   const mockGerenciadorCenario = {
@@ -49,6 +62,10 @@ describe('Motor', () => {
     expect(mockGerenciadorCenario.criarCenario).toHaveBeenCalledWith(clienteId, valorCredito, parametrosAdicionais);
     expect(mockChainOfResponsibility.processar).toHaveBeenCalledWith(mockCenario);
     expect(mockGerenciadorCenario.marcarStatusCenario).toHaveBeenCalledWith(mockCenarioProcessado);
+    
+    // Verifica se o método salvar foi chamado
+    expect(mockCenarioFinal.salvar).toHaveBeenCalled();
+    
     expect(mockLogService.registrarSucesso).toHaveBeenCalledWith(mockCenarioFinal);
 
     // Verifica o resultado
@@ -66,5 +83,25 @@ describe('Motor', () => {
     // Verifica se o erro é propagado e o log é registrado
     await expect(motor.processarSolicitacao(clienteId, valorCredito)).rejects.toThrow(erro);
     expect(mockLogService.registrarErro).toHaveBeenCalledWith(erro, clienteId, valorCredito);
+  });
+
+  // Adiciona um teste para o método buscarCenario
+  test('deve chamar Cenario.buscarPorId quando buscarCenario é chamado', async () => {
+    const cenarioId = 'cen_12345';
+    const mockBuscarPorId = jest.spyOn(Cenario, 'buscarPorId').mockResolvedValueOnce(mockCenario);
+    
+    await motor.buscarCenario(cenarioId);
+    
+    expect(mockBuscarPorId).toHaveBeenCalledWith(cenarioId);
+  });
+
+  // Adiciona um teste para o método buscarCenariosPorCliente
+  test('deve chamar Cenario.buscarPorCliente quando buscarCenariosPorCliente é chamado', async () => {
+    const clienteId = '12345';
+    const mockBuscarPorCliente = jest.spyOn(Cenario, 'buscarPorCliente').mockResolvedValueOnce([mockCenario]);
+    
+    await motor.buscarCenariosPorCliente(clienteId);
+    
+    expect(mockBuscarPorCliente).toHaveBeenCalledWith(clienteId);
   });
 });

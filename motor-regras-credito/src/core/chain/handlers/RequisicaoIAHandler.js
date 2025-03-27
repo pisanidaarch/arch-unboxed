@@ -11,9 +11,6 @@ class RequisicaoIAHandler {
   async processar(cenario) {
     // Restaura os métodos do cenário se estiverem faltando
     const cenarioProcessado = restaurarMetodosCenario(cenario);
-
-    // MODIFICAÇÃO: Removida a verificação de regraFalhou e precisaAnaliseManual
-    // para permitir que a IA sempre seja consultada
     
     console.log(`RequisicaoIAHandler: Processando cenário para cliente ${cenarioProcessado.clienteId}`);
     console.log(`Status cenário: regraFalhou=${cenarioProcessado.regraFalhou}, precisaAnaliseManual=${cenarioProcessado.precisaAnaliseManual}`);
@@ -22,29 +19,40 @@ class RequisicaoIAHandler {
       this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, true);
       console.log(`Consultando IA para o cliente ${cenarioProcessado.clienteId} - Valor: ${cenarioProcessado.valorCredito}`);
       
+      // Chamar a IA para avaliação
       const resultadoIA = await this.iaAdapter.avaliarCredito(cenarioProcessado);
+      
+      // Armazenar o resultado da IA no cenário
       cenarioProcessado.resultadoIA = resultadoIA;
 
       console.log(`Resultado IA: aprovado=${resultadoIA.aprovado}, analiseManual=${resultadoIA.analiseManual}, confiança=${resultadoIA.confianca}`);
       console.log(`Justificativa IA: ${resultadoIA.justificativa}`);
 
-      // MODIFICAÇÃO: Não alteramos mais o estado do cenário com base na resposta da IA
-      // apenas adicionamos o resultado para referência
-      // A lógica para definir o status final acontece na Chain of Responsibility
-      
-      // Adicionamos a avaliação da IA nos resultados para registro
+      // Adicionar o resultado da IA como uma avaliação
       cenarioProcessado.adicionarResultadoAvaliacao(
-        "RESULTADO_IA",
+        "AVALIACAO_IA",
         resultadoIA.aprovado && !resultadoIA.analiseManual,
         resultadoIA.justificativa || 
-        (resultadoIA.aprovado 
-          ? "IA recomendou aprovação" 
-          : (resultadoIA.analiseManual 
-              ? "IA recomendou análise manual" 
-              : "IA recomendou reprovação"))
+          (resultadoIA.aprovado 
+            ? "IA recomendou aprovação" 
+            : (resultadoIA.analiseManual 
+                ? "IA recomendou análise manual" 
+                : "IA recomendou reprovação"))
       );
       
-      console.log(`RequisicaoIAHandler: Processamento concluído`);
+      // Se a IA indicou análise manual, marcar no cenário
+      if (resultadoIA.analiseManual) {
+        cenarioProcessado.precisaAnaliseManual = true;
+        cenarioProcessado.motivoAnaliseManual = "Recomendação de análise manual pela IA";
+      } 
+      // Se a IA reprovação e ainda não tinha reprovado, marcar como reprovado
+      else if (!resultadoIA.aprovado && !cenarioProcessado.regraFalhou) {
+        cenarioProcessado.regraFalhou = true;
+      }
+      
+      console.log(`RequisicaoIAHandler: Processamento concluído com status: ${
+        resultadoIA.analiseManual ? "ANALISE_MANUAL" : (resultadoIA.aprovado ? "APROVADO" : "REPROVADO")
+      }`);
     } catch (error) {
       console.error('[RequisicaoIAHandler] Erro ao consultar IA:', error);
       this.logService.registrarConsultaExterna('IA', cenarioProcessado.clienteId, false);
@@ -56,7 +64,9 @@ class RequisicaoIAHandler {
         "Erro ao consultar sistema de IA: " + error.message
       );
       
-      // Não definimos precisaAnaliseManual aqui, isso será feito na Chain
+      // Em caso de erro na IA, encaminhar para análise manual
+      cenarioProcessado.precisaAnaliseManual = true;
+      cenarioProcessado.motivoAnaliseManual = "Erro ao consultar IA";
     }
 
     return cenarioProcessado;
